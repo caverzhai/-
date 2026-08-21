@@ -1,0 +1,90 @@
+/**
+ * 人人帮 自动提现引擎
+ * - 单线程串行处理，确保nonce不冲突
+ * - 不审核、不限制，到账即打款
+ * - 每笔扣1代币手续费
+ */
+const { ethers } = require('ethers');
+const db = require('./db');
+
+// ERC20 transfer ABI（只需要transfer）
+const ERC20_ABI = [
+  "function transfer(address to, uint256 amount) external returns (bool)",
+  "function balanceOf(address account) external view returns (uint256)"
+];
+
+class WithdrawalEngine {
+  constructor() {
+    this.running = false;
+    this.provider = null;
+    this.wallet = null;
+    this.token = null;
+    this.tokenDecimals = 6;
+  }
+
+  init(rpcUrl, privateKey, tokenAddress) {
+    this.provider = new ethers.JsonRpcProvider(rpcUrl);
+    this.wallet = new ethers.Wallet(privateKey, this.provider);
+    this.token = new ethers.Contract(tokenAddress, ERC20_ABI, this.wallet);
+    console.log(`[提现引擎] 已初始化，总钱包: ${this.wallet.address}`);
+  }
+
+  // 启动轮询
+  start(intervalMs = 3000) {
+    if (this.running) return;
+    this.running = true;
+    console.log(`[提现引擎] 启动，轮询间隔 ${intervalMs}ms`);
+    this.loop(intervalMs);
+  }
+
+  async loop(intervalMs) {
+    while (this.running) {
+      try {
+        await this.processPending();
+      } catch (e) {
+        console.error('[提现引擎] 处理异常:', e.message);
+      }
+      await new Promise(r => setTimeout(r, intervalMs));
+    }
+  }
+
+  // 处理所有待提现订单（串行）
+  async processPending() {
+    const pending = db.getPendingWithdrawals();
+    for (const w of pending) {
+      await this.processOne(w);
+    }
+  }
+
+  async processOne(withdrawal) {
+    const { id, wallet: toAddress, actual_amount } = withdrawal;
+    try {
+      // 检查总钱包代币余额
+      const balance = await this.token.balanceOf(this.wallet.address);
+      const amountWei = BigInt(Math.floor(actual_amount * 10 ** this.tokenDecimals));
+      if (balance < amountWei) {
+        console.error(`[提现引擎] 订单#${id} 总钱包余额不足，跳过`);
+        return; // 跳过，等下一轮
+      }
+
+      console.log(`[提现引擎] 处理订单#${id}: 向 ${toAddress} 转 ${actual_amount} 代币`);
+
+      // 执行转账
+      const tx = await this.token.transfer(toAddress, amountWei);
+      await tx.wait();
+
+      // 标记成功
+      db.updateWithdrawal(id, 'success', tx.hash);
+      console.log(`[提现引擎] 订单#${id} 成功 tx=${tx.hash}`);
+    } catch (e) {
+      console.error(`[提现引擎] 订单#${id} 失败:`, e.message);
+      // 失败回滚余额
+      db.raw.transaction(() => {
+        db.addBalance(withdrawal.wallet, withdrawal.amount, 'withdraw_refund', id);
+      })();
+      db.updateWithdrawal(id, 'failed', null);
+    }
+  }
+}
+
+module.exports = new WithdrawalEngine();
