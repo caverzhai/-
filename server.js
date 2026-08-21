@@ -29,7 +29,6 @@ const ERC20_ABI = [
   "event Transfer(address indexed from, address indexed to, uint256 value)",
   "function balanceOf(address account) external view returns (uint256)"
 ];
-const tokenContract = new ethers.Contract(TOKEN_ADDRESS, ERC20_ABI, provider);
 
 // ============ 链上验证 ============
 /**
