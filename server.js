@@ -1,6 +1,14 @@
 /**
  * 人人帮 DApp 后端主服务
  */
+// 全局错误保护：任何未处理的异常只记日志，不崩溃
+process.on('unhandledRejection', (reason) => {
+  console.error('[全局] 未处理的Promise拒绝:', reason?.message || reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[全局] 未捕获的异常:', err?.message || err);
+});
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
