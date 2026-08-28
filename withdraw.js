@@ -19,7 +19,7 @@ class WithdrawalEngine {
     this.provider = null;
     this.wallet = null;
     this.token = null;
-    this.tokenDecimals = 6;
+    this.tokenDecimals = 18;
   }
 
   init(rpcUrl, privateKey, tokenAddress) {
