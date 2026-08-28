@@ -452,7 +452,6 @@ async function renderSharePage() {
     }
   }
 
-  }
 } 
 function copyLink() {
   const link = document.getElementById('share-link').textContent;
