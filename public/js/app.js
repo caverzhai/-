@@ -138,7 +138,7 @@ async function buyCard() {
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
     const token = new ethers.Contract(state.config.token_address, ERC20_ABI, signer);
-    const amount = ethers.parseUnits(String(state.config.card_price), 18);
+    const amount = ethers.parseUnits(String(state.config.card_price), 6);
 
     showToast('正在发起转账，请在钱包中确认...');
     const tx = await token.transfer(state.config.total_wallet, amount);
@@ -158,17 +158,8 @@ async function buyCard() {
     } else {
       showToast('失败: ' + data.msg);
     }
-} catch (e) {
-    const msg = e.message || '';
-    if (msg.includes('user rejected') || msg.includes('User rejected')) {
-      showToast('已取消转账');
-    } else if (msg.includes('insufficient') || msg.includes('missing revert data') || msg.includes('CALL_EXCEPTION')) {
-      showToast('钱包余额不足，请确认有足够的USDT');
-    } else if (msg.includes('network') || msg.includes('timeout')) {
-      showToast('网络错误，请重试');
-    } else {
-      showToast('转账失败，请检查钱包余额');
-    }
+  } catch (e) {
+    showToast('操作失败: ' + e.message);
   }
 }
 
@@ -180,7 +171,7 @@ async function buyThanksCard() {
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
     const token = new ethers.Contract(state.config.token_address, ERC20_ABI, signer);
-    const amount = ethers.parseUnits(String(state.config.thanks_price), 18);
+    const amount = ethers.parseUnits(String(state.config.thanks_price), 6);
 
     showToast('正在发起转账，请在钱包中确认...');
     const tx = await token.transfer(state.config.total_wallet, amount);
@@ -199,17 +190,8 @@ async function buyThanksCard() {
     } else {
       showToast('失败: ' + data.msg);
     }
-} catch (e) {
-    const msg = e.message || '';
-    if (msg.includes('user rejected') || msg.includes('User rejected')) {
-      showToast('已取消转账');
-    } else if (msg.includes('insufficient') || msg.includes('missing revert data') || msg.includes('CALL_EXCEPTION')) {
-      showToast('钱包余额不足，请确认有足够的USDT');
-    } else if (msg.includes('network') || msg.includes('timeout')) {
-      showToast('网络错误，请重试');
-    } else {
-      showToast('转账失败，请检查钱包余额');
-    }
+  } catch (e) {
+    showToast('操作失败: ' + e.message);
   }
 }
 
@@ -291,7 +273,7 @@ async function renderMyPage() {
     <div class="card">
       <div class="info-row">
         <span class="label">推荐人</span>
-        <span class="value">${m.referrer_nickname || (m.referrer ? shortAddr(m.referrer) : '无（链头）')}</span>
+        <span class="value">${m.referrer_nickname || '无（链头）'}</span>
       </div>
       <div class="info-row">
         <span class="label">直推人数</span>
@@ -454,23 +436,17 @@ async function renderSharePage() {
     </div>
   `;
 
-// 生成二维码
+  // 生成二维码
   if (window.QRCode) {
-    const box = document.getElementById('qrcode');
-    if (box) {
-      const canvas = document.createElement('canvas');
-      QRCode.toCanvas(canvas, shareUrl, { width: 180, margin: 1 }, (err) => {
-        if (!err) {
-          box.innerHTML = '';
-          box.appendChild(canvas);
-        } else {
-          console.error('二维码生成失败:', err);
-        }
-      });
-    }
+    QRCode.toCanvas(shareUrl, { width: 180, margin: 1 }, (err, canvas) => {
+      if (!err) {
+        const box = document.getElementById('qrcode');
+        if (box) { box.innerHTML = ''; box.appendChild(canvas); }
+      }
+    });
   }
+}
 
-} 
 function copyLink() {
   const link = document.getElementById('share-link').textContent;
   navigator.clipboard.writeText(link).then(() => {
