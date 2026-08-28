@@ -158,8 +158,17 @@ async function buyCard() {
     } else {
       showToast('失败: ' + data.msg);
     }
-  } catch (e) {
-    showToast('操作失败: ' + e.message);
+} catch (e) {
+    const msg = e.message || '';
+    if (msg.includes('user rejected') || msg.includes('User rejected')) {
+      showToast('已取消转账');
+    } else if (msg.includes('insufficient') || msg.includes('missing revert data') || msg.includes('CALL_EXCEPTION')) {
+      showToast('钱包余额不足，请确认有足够的USDT');
+    } else if (msg.includes('network') || msg.includes('timeout')) {
+      showToast('网络错误，请重试');
+    } else {
+      showToast('转账失败，请检查钱包余额');
+    }
   }
 }
 
@@ -190,8 +199,17 @@ async function buyThanksCard() {
     } else {
       showToast('失败: ' + data.msg);
     }
-  } catch (e) {
-    showToast('操作失败: ' + e.message);
+} catch (e) {
+    const msg = e.message || '';
+    if (msg.includes('user rejected') || msg.includes('User rejected')) {
+      showToast('已取消转账');
+    } else if (msg.includes('insufficient') || msg.includes('missing revert data') || msg.includes('CALL_EXCEPTION')) {
+      showToast('钱包余额不足，请确认有足够的USDT');
+    } else if (msg.includes('network') || msg.includes('timeout')) {
+      showToast('网络错误，请重试');
+    } else {
+      showToast('转账失败，请检查钱包余额');
+    }
   }
 }
 
