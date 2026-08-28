@@ -438,20 +438,14 @@ async function renderSharePage() {
 
 // 生成二维码
   if (window.QRCode) {
-    const box = document.getElementById('qrcode');
-    if (box) {
-      const canvas = document.createElement('canvas');
-      QRCode.toCanvas(canvas, shareUrl, { width: 180, margin: 1 }, (err) => {
-        if (!err) {
-          box.innerHTML = '';
-          box.appendChild(canvas);
-        } else {
-          console.error('二维码生成失败:', err);
-        }
-      });
-    }
+    QRCode.toCanvas(shareUrl, { width: 180, margin: 1 }, (err, canvas) => {
+      if (!err) {
+        const box = document.getElementById('qrcode');
+        if (box) { box.innerHTML = ''; box.appendChild(canvas); }
+      }
+    });
   }
-
+  
 function copyLink() {
   const link = document.getElementById('share-link').textContent;
   navigator.clipboard.writeText(link).then(() => {
