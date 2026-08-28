@@ -139,13 +139,16 @@ const dbapi = {
   },
 
   // 获取推荐链（从直推人向上，最多64层）
-  getUplinkChain(wallet, maxDepth = 64) {
+getUplinkChain(wallet, maxDepth = 64) {
     const chain = [];
+    const seen = new Set();
     let current = this.getMember(wallet);
     if (!current || !current.referrer) return chain;
     let depth = 0;
     let ref = current.referrer;
     while (ref && depth < maxDepth) {
+      if (seen.has(ref)) break;
+      seen.add(ref);
       const m = this.getMember(ref);
       if (!m) break;
       chain.push(m);
@@ -163,17 +166,20 @@ const dbapi = {
   },
 
   // 获取9层团队（递归）
-  getTeam9Levels(wallet) {
-    const result = []; // [{level:1, members:[...]}, ...]
+getTeam9Levels(wallet) {
+    const result = [];
+    const seen = new Set([wallet.toLowerCase()]);
     let currentLevel = [wallet.toLowerCase()];
     for (let lv = 1; lv <= 9; lv++) {
       const placeholders = currentLevel.map(() => '?').join(',');
       const members = db.prepare(`
         SELECT * FROM members WHERE referrer IN (${placeholders}) ORDER BY created_at DESC
       `).all(...currentLevel);
-      if (members.length === 0) break;
-      result.push({ level: lv, members });
-      currentLevel = members.map(m => m.wallet);
+      const newMembers = members.filter(m => !seen.has(m.wallet));
+      if (newMembers.length === 0) break;
+      newMembers.forEach(m => seen.add(m.wallet));
+      result.push({ level: lv, members: newMembers });
+      currentLevel = newMembers.map(m => m.wallet);
     }
     return result;
   },
