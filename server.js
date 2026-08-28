@@ -306,11 +306,15 @@ app.get('/api/config', (req, res) => {
 // ============ 启动 ============
 app.listen(PORT, () => {
   console.log(`人人帮 DApp 后端已启动: http://localhost:${PORT}`);
-  // 初始化提现引擎
   if (process.env.PRIVATE_KEY && TOKEN_ADDRESS && TOTAL_WALLET) {
-    withdrawEngine.init(RPC_URL, process.env.PRIVATE_KEY, TOKEN_ADDRESS);
-    withdrawEngine.start();
+    try {
+      withdrawEngine.init(RPC_URL, process.env.PRIVATE_KEY, TOKEN_ADDRESS);
+      withdrawEngine.start();
+      console.log('[提现引擎] 启动成功');
+    } catch (e) {
+      console.error('[提现引擎] 启动失败:', e.message);
+    }
   } else {
-    console.log('[警告] 未配置 PRIVATE_KEY / TOKEN_ADDRESS / TOTAL_WALLET，提现引擎未启动');
+    console.log('[警告] 未配置提现引擎');
   }
 });
