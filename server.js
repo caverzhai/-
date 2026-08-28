@@ -311,6 +311,52 @@ app.get('/api/config', (req, res) => {
   });
 });
 
+// ============ 数据导出/导入（备份用） ============
+app.get('/api/export', (req, res) => {
+  try {
+    const members = db.raw.prepare('SELECT * FROM members').all();
+    const balances = db.raw.prepare('SELECT * FROM balances').all();
+    const ledger = db.raw.prepare('SELECT * FROM ledger').all();
+    const cardPurchases = db.raw.prepare('SELECT * FROM card_purchases').all();
+    const thanksPurchases = db.raw.prepare('SELECT * FROM thanks_purchases').all();
+    const withdrawals = db.raw.prepare('SELECT * FROM withdrawals').all();
+    const data = { exported_at: new Date().toISOString(), members, balances, ledger, card_purchases: cardPurchases, thanks_purchases: thanksPurchases, withdrawals };
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', 'attachment; filename=renrenbang-backup.json');
+    res.json(data);
+  } catch (e) { res.json({ success: false, msg: e.message }); }
+});
+
+app.post('/api/import', (req, res) => {
+  const { password, data } = req.body;
+  if (!process.env.ADMIN_PASSWORD) return res.json({ success: false, msg: '未配置管理员密码' });
+  if (password !== process.env.ADMIN_PASSWORD) return res.json({ success: false, msg: '密码错误' });
+  if (!data || !data.members) return res.json({ success: false, msg: '数据格式错误' });
+  try {
+    db.raw.transaction(() => {
+      db.raw.prepare('DELETE FROM ledger').run();
+      db.raw.prepare('DELETE FROM withdrawals').run();
+      db.raw.prepare('DELETE FROM thanks_purchases').run();
+      db.raw.prepare('DELETE FROM card_purchases').run();
+      db.raw.prepare('DELETE FROM balances').run();
+      db.raw.prepare('DELETE FROM members').run();
+      const m = db.raw.prepare('INSERT OR REPLACE INTO members (wallet, referrer, nickname, avatar_id, birthday, debt_amount, is_member, level, direct_count, team_count, thanks_card_sent, created_at, become_member_at) VALUES (@wallet, @referrer, @nickname, @avatar_id, @birthday, @debt_amount, @is_member, @level, @direct_count, @team_count, @thanks_card_sent, @created_at, @become_member_at)');
+      for (const r of data.members) m.run(r);
+      const b = db.raw.prepare('INSERT OR REPLACE INTO balances (wallet, available, updated_at) VALUES (@wallet, @available, @updated_at)');
+      for (const r of (data.balances || [])) b.run(r);
+      const l = db.raw.prepare('INSERT OR REPLACE INTO ledger (id, wallet, type, amount, balance_after, ref_id, created_at) VALUES (@id, @wallet, @type, @amount, @balance_after, @ref_id, @created_at)');
+      for (const r of (data.ledger || [])) l.run(r);
+      const c = db.raw.prepare('INSERT OR REPLACE INTO card_purchases (id, buyer, tx_hash, amount, distribution, status, created_at) VALUES (@id, @buyer, @tx_hash, @amount, @distribution, @status, @created_at)');
+      for (const r of (data.card_purchases || [])) c.run(r);
+      const t = db.raw.prepare('INSERT OR REPLACE INTO thanks_purchases (id, buyer, receiver, tx_hash, amount, status, created_at) VALUES (@id, @buyer, @receiver, @tx_hash, @amount, @status, @created_at)');
+      for (const r of (data.thanks_purchases || [])) t.run(r);
+      const w = db.raw.prepare('INSERT OR REPLACE INTO withdrawals (id, wallet, amount, actual_amount, tx_hash, status, created_at, processed_at) VALUES (@id, @wallet, @amount, @actual_amount, @tx_hash, @status, @created_at, @processed_at)');
+      for (const r of (data.withdrawals || [])) w.run(r);
+    })();
+    res.json({ success: true, msg: '导入成功' });
+  } catch (e) { res.json({ success: false, msg: '导入失败: ' + e.message }); }
+});
+
 // ============ 启动 ============
 app.listen(PORT, () => {
   console.log(`人人帮 DApp 后端已启动: http://localhost:${PORT}`);
