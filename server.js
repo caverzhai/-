@@ -2,7 +2,7 @@
  * 人人帮 DApp 后端主服务
  */
 // 全局错误保护：任何未处理的异常只记日志，不崩溃
-process.on('unhandledRejection', (reason) => {
+process.on('unhandledRejection', (reason) => 
   console.error('[全局] 未处理的Promise拒绝:', reason?.message || reason);
 });
 process.on('uncaughtException', (err) => {
@@ -28,7 +28,7 @@ const PORT = process.env.PORT || 3000;
 const RPC_URL = process.env.RPC_URL || 'https://bsc-dataseed.binance.org';
 const TOKEN_ADDRESS = process.env.TOKEN_ADDRESS || '';
 const TOTAL_WALLET = process.env.TOTAL_WALLET || '';
-const TOKEN_DECIMALS = 6;
+const TOKEN_DECIMALS = 18;
 
 const provider = new ethers.JsonRpcProvider(RPC_URL);
 
@@ -258,7 +258,6 @@ app.post('/api/withdraw', (req, res) => {
     const result = db.raw.transaction(() => {
       // 立即扣减余额
       db.subBalance(wallet, amount, 'withdraw', null);
-      db.subBalance(wallet, 1, 'fee', null); // 手续费1代币
       // 创建提现订单（实际到账=amount-1）
       const wId = db.createWithdrawal(wallet, amount);
       return wId;
