@@ -553,3 +553,4 @@ if (window.ethereum) {
     }
   });
 }
+
