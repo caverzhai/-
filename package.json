@@ -1,6 +1,7 @@
 {
   "name": "renrenbang-backend",
   "version": "1.0.0",
+  "engines": { "node": "20.x" },
   "description": "人人帮 DApp 后端服务",
   "main": "server.js",
   "scripts": {
