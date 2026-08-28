@@ -73,6 +73,10 @@ app.post('/api/bind', (req, res) => {
     return res.json({ success: false, msg: '无效的钱包地址' });
   }
   const w = wallet.toLowerCase();
+  // 不能自己推荐自己
+  if (referrer && referrer.toLowerCase() === w) {
+    return res.json({ success: false, msg: '不能自己推荐自己' });
+  }
   let member = db.getMember(w);
 
   // 已存在会员
@@ -368,6 +372,15 @@ app.post('/api/import', (req, res) => {
 });
 
 // ============ 启动 ============
+// 启动时自动修复错误数据：自己推荐自己的，清空推荐人
+try {
+  const fixed = db.raw.prepare("UPDATE members SET referrer = NULL WHERE referrer = wallet").run();
+  if (fixed.changes > 0) {
+    console.log(`[修复] 已清理 ${fixed.changes} 条自己推荐自己的错误数据`);
+  }
+} catch (e) {
+  console.error('[修复] 清理错误数据失败:', e.message);
+}
 app.listen(PORT, () => {
   console.log(`人人帮 DApp 后端已启动: http://localhost:${PORT}`);
   if (process.env.PRIVATE_KEY && TOKEN_ADDRESS && TOTAL_WALLET) {
