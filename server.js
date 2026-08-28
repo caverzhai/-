@@ -381,6 +381,25 @@ try {
 } catch (e) {
   console.error('[修复] 清理错误数据失败:', e.message);
 }
+// 手动修复推荐人（管理员接口，用于修复历史数据）
+app.post('/api/admin/fix-referrer', (req, res) => {
+  const { wallet, referrer } = req.body;
+  if (!wallet || !referrer) {
+    return res.json({ success: false, msg: '参数不全' });
+  }
+  const w = wallet.toLowerCase();
+  const r = referrer.toLowerCase();
+  if (w === r) {
+    return res.json({ success: false, msg: '不能自己推荐自己' });
+  }
+  const refMember = db.getMember(r);
+  if (!refMember) {
+    return res.json({ success: false, msg: '推荐人不存在' });
+  }
+  db.raw.prepare('UPDATE members SET referrer = ? WHERE wallet = ?').run(r, w);
+  const member = db.getMember(w);
+  res.json({ success: true, member });
+});
 app.listen(PORT, () => {
   console.log(`人人帮 DApp 后端已启动: http://localhost:${PORT}`);
   if (process.env.PRIVATE_KEY && TOKEN_ADDRESS && TOTAL_WALLET) {
