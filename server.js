@@ -90,7 +90,14 @@ app.post('/api/bind', (req, res) => {
     return res.json({ success: true, member, isNew: false });
   }
 
-  // 新会员必须有推荐人
+// 新会员必须有推荐人（但系统第一个人除外）
+  const memberCount = db.raw.prepare('SELECT COUNT(*) as cnt FROM members').get().cnt;
+  if (memberCount === 0) {
+    // 系统第一个人，允许无推荐人注册，成为链头
+    member = db.createMember(w, null);
+    return res.json({ success: true, member, isNew: true, isGenesis: true });
+  }
+
   if (!referrer || !ethers.isAddress(referrer)) {
     return res.json({ success: false, msg: '请通过推荐人分享链接注册' });
   }
