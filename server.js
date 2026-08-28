@@ -74,19 +74,30 @@ app.post('/api/bind', (req, res) => {
   }
   const w = wallet.toLowerCase();
   let member = db.getMember(w);
+
+  // 已存在会员
   if (member) {
-    // 已存在，不修改推荐人
+    // 如果当前没有推荐人，且提供了有效推荐人，允许补绑定
+    if (!member.referrer && referrer && ethers.isAddress(referrer)) {
+      const refMember = db.getMember(referrer.toLowerCase());
+      if (refMember) {
+        db.raw.prepare('UPDATE members SET referrer = ? WHERE wallet = ?')
+          .run(referrer.toLowerCase(), w);
+        member = db.getMember(w);
+        return res.json({ success: true, member, isNew: false, referrerUpdated: true });
+      }
+    }
     return res.json({ success: true, member, isNew: false });
   }
-  // 验证推荐人地址
-  let ref = null;
-  if (referrer && ethers.isAddress(referrer)) {
-    ref = referrer.toLowerCase();
-    // 推荐人必须已存在
-    const refMember = db.getMember(ref);
-    if (!refMember) {
-      return res.json({ success: false, msg: '推荐人不存在' });
-    }
+
+  // 新会员必须有推荐人
+  if (!referrer || !ethers.isAddress(referrer)) {
+    return res.json({ success: false, msg: '请通过推荐人分享链接注册' });
+  }
+  const ref = referrer.toLowerCase();
+  const refMember = db.getMember(ref);
+  if (!refMember) {
+    return res.json({ success: false, msg: '推荐人不存在' });
   }
   member = db.createMember(w, ref);
   res.json({ success: true, member, isNew: true });
