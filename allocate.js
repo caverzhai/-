@@ -51,22 +51,27 @@ function distributeCard(buyer, refId) {
     if (v9Count >= MAX_V9_COUNT) break;
   }
 
-  // ===== C项：从P2开始向上找非V9会员，各20，到链头重复 =====
+// ===== C项：从P2开始向上找非V9会员，各20，到链头后链头继续拿直到分完 =====
   if (remaining > 0) {
-    // 从chain[1]开始（即P2，直推人的上级），筛选非V9会员
     const normalMembers = chain.slice(1).filter(m => m.level === 0);
-
     if (normalMembers.length > 0) {
       let idx = 0;
-      while (remaining >= NORMAL_REWARD) {
-        const target = normalMembers[idx % normalMembers.length];
+      while (remaining >= NORMAL_REWARD && idx < normalMembers.length) {
+        const target = normalMembers[idx];
         db.addBalance(target.wallet, NORMAL_REWARD, 'income_normal', refId);
         distribution.push({ wallet: target.wallet, type: 'income_normal', amount: NORMAL_REWARD });
         remaining -= NORMAL_REWARD;
         idx++;
       }
+      if (remaining >= NORMAL_REWARD) {
+        const head = normalMembers[normalMembers.length - 1];
+        while (remaining >= NORMAL_REWARD) {
+          db.addBalance(head.wallet, NORMAL_REWARD, 'income_normal', refId);
+          distribution.push({ wallet: head.wallet, type: 'income_normal', amount: NORMAL_REWARD });
+          remaining -= NORMAL_REWARD;
+        }
+      }
     } else {
-      // 没有普通会员，全部归链头
       const head = chain[chain.length - 1];
       while (remaining >= NORMAL_REWARD) {
         db.addBalance(head.wallet, NORMAL_REWARD, 'income_normal', refId);
