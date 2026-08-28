@@ -291,7 +291,7 @@ async function renderMyPage() {
     <div class="card">
       <div class="info-row">
         <span class="label">推荐人</span>
-        <span class="value">${m.referrer_nickname || '无（链头）'}</span>
+        <span class="value">${m.referrer_nickname || (m.referrer ? shortAddr(m.referrer) : '无（链头）')}</span>
       </div>
       <div class="info-row">
         <span class="label">直推人数</span>
