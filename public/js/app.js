@@ -12,7 +12,7 @@ const state = {
   refAddress: null
 };
 
-const AVATARS = ['👤', '😀', '😎', '🤠', '🦊', '🐱', '🐶', '🦁', '🐯', '🐸', '🦄', '🐲'];
+const AVATARS = ['👨','👩','👴','👵','👦','👧','👨‍🦰','👩‍🦰','👨‍🦱','👩‍🦱','👨‍🦳','👩‍🦳','👨‍🎓','👩‍🎓','👨‍💼','👩‍💼','👨‍🔧','👩‍🔧','🧑‍💻','🧑‍🎓'];
 const ERC20_ABI = [
   "function transfer(address to, uint256 amount) external returns (bool)",
   "function balanceOf(address account) external view returns (uint256)"
@@ -117,7 +117,7 @@ function renderHomeAction() {
   }
   if (!state.member || !state.member.is_member) {
     el.innerHTML = `
-      <button class="btn btn-primary" onclick="buyCard()">购买互助卡（${state.config?.card_price || 180}枚）成为会员</button>
+      <button class="btn btn-primary" onclick="buyCard()">购买互助卡（${state.config?.card_price || 180}U）成为会员</button>
       <p style="text-align:center;font-size:12px;color:#999;margin-top:8px;">购买后即可生成专属分享链接</p>
     `;
   } else {
@@ -138,7 +138,7 @@ async function buyCard() {
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
     const token = new ethers.Contract(state.config.token_address, ERC20_ABI, signer);
-    const amount = ethers.parseUnits(String(state.config.card_price), 6);
+    const amount = ethers.parseUnits(String(state.config.card_price), 18);
 
     showToast('正在发起转账，请在钱包中确认...');
     const tx = await token.transfer(state.config.total_wallet, amount);
@@ -159,7 +159,16 @@ async function buyCard() {
       showToast('失败: ' + data.msg);
     }
   } catch (e) {
-    showToast('操作失败: ' + e.message);
+    const msg = e.message || '';
+    if (msg.includes('user rejected') || msg.includes('User rejected')) {
+      showToast('已取消转账');
+    } else if (msg.includes('insufficient') || msg.includes('missing revert data') || msg.includes('CALL_EXCEPTION')) {
+      showToast('钱包余额不足，请确认有足够的USDT');
+    } else if (msg.includes('network') || msg.includes('timeout')) {
+      showToast('网络错误，请重试');
+    } else {
+      showToast('转账失败，请检查钱包余额');
+    }
   }
 }
 
@@ -171,7 +180,7 @@ async function buyThanksCard() {
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
     const token = new ethers.Contract(state.config.token_address, ERC20_ABI, signer);
-    const amount = ethers.parseUnits(String(state.config.thanks_price), 6);
+    const amount = ethers.parseUnits(String(state.config.thanks_price), 18);
 
     showToast('正在发起转账，请在钱包中确认...');
     const tx = await token.transfer(state.config.total_wallet, amount);
@@ -191,7 +200,16 @@ async function buyThanksCard() {
       showToast('失败: ' + data.msg);
     }
   } catch (e) {
-    showToast('操作失败: ' + e.message);
+    const msg = e.message || '';
+    if (msg.includes('user rejected') || msg.includes('User rejected')) {
+      showToast('已取消转账');
+    } else if (msg.includes('insufficient') || msg.includes('missing revert data') || msg.includes('CALL_EXCEPTION')) {
+      showToast('钱包余额不足，请确认有足够的USDT');
+    } else if (msg.includes('network') || msg.includes('timeout')) {
+      showToast('网络错误，请重试');
+    } else {
+      showToast('转账失败，请检查钱包余额');
+    }
   }
 }
 
@@ -263,7 +281,7 @@ async function renderMyPage() {
 
     <div class="balance-card">
       <div class="balance-label">可提现余额</div>
-      <div><span class="balance-amount">${m.balance || 0}</span><span class="balance-unit">枚</span></div>
+      <div><span class="balance-amount">${m.balance || 0}</span><span class="balance-unit">U</span></div>
       <div style="margin-top:14px;display:flex;gap:10px;">
         <button class="btn btn-primary" onclick="withdraw()" ${m.balance > 0 ? '' : 'disabled'}>提现</button>
         <button class="btn btn-secondary" onclick="openProfileModal()" style="max-width:100px;">编辑资料</button>
@@ -273,7 +291,7 @@ async function renderMyPage() {
     <div class="card">
       <div class="info-row">
         <span class="label">推荐人</span>
-        <span class="value">${m.referrer_nickname || '无（链头）'}</span>
+        <span class="value">${m.referrer_nickname || (m.referrer ? shortAddr(m.referrer) : '无（链头）')}</span>
       </div>
       <div class="info-row">
         <span class="label">直推人数</span>
@@ -284,8 +302,8 @@ async function renderMyPage() {
         <span class="value">${m.team_count} 人</span>
       </div>
       <div class="info-row">
-        <span class="label">需要帮助</span>
-        <span class="value">${m.debt_amount || 0} 枚</span>
+        <span class="label">我的业绩目标</span>
+        <span class="value">${m.debt_amount || 0} U</span>
       </div>
     </div>
 
@@ -302,12 +320,12 @@ async function renderMyPage() {
           <div class="progress-bar"><div class="progress-fill ${teamPct>=100?'done':''}" style="width:${teamPct}%"></div></div>
         </div>
         <div class="progress-item">
-          <div class="progress-header"><span>送出感恩卡（300枚）</span><span>${thanksDone ? '已完成' : '未完成'}</span></div>
+          <div class="progress-header"><span>送出感恩卡（300U）</span><span>${thanksDone ? '已完成' : '未完成'}</span></div>
           <div class="progress-bar"><div class="progress-fill ${thanksDone?'done':''}" style="width:${thanksDone?100:0}%"></div></div>
         </div>
       </div>
       ${m.level !== 1 && !thanksDone ? `
-        <button class="btn btn-warning" style="margin-top:12px;" onclick="buyThanksCard()">送出感恩卡（300枚）</button>
+        <button class="btn btn-warning" style="margin-top:12px;" onclick="buyThanksCard()">送出感恩卡（300U）</button>
       ` : ''}
       ${m.level === 1 ? '<p style="text-align:center;color:#11b981;font-weight:600;margin-top:8px;">🎉 您已是V9会员</p>' : ''}
     </div>
@@ -423,7 +441,7 @@ async function renderSharePage() {
     <div class="share-card">
       <div class="share-avatar">${avatar}</div>
       <div class="share-name">${m.nickname || '人人帮会员'}</div>
-      ${m.debt_amount > 0 ? `<div class="share-debt">需要帮助 ${m.debt_amount} 枚</div>` : ''}
+      ${m.debt_amount > 0 ? `<div class="share-debt">我的业绩目标 ${m.debt_amount} U</div>` : ''}
       <div class="qrcode-box" id="qrcode"></div>
       <div class="share-link" id="share-link">${shareUrl}</div>
       <button class="btn btn-primary" onclick="copyLink()">复制分享链接</button>
@@ -431,19 +449,16 @@ async function renderSharePage() {
     <div class="card">
       <h3>分享说明</h3>
       <p style="font-size:13px;color:#666;line-height:1.7;">
-        好友通过你的链接在TP钱包中打开并连接钱包，即可绑定推荐关系。好友购买互助卡后，你将获得直推奖励20枚，并有机会获得V9奖励40枚。
+        好友通过你的链接在TP钱包中打开并连接钱包，即可绑定推荐关系。好友购买互助卡后，你将获得直推奖励20U，并有机会获得V9奖励40U。
       </p>
     </div>
   `;
 
-  // 生成二维码
-  if (window.QRCode) {
-    QRCode.toCanvas(shareUrl, { width: 180, margin: 1 }, (err, canvas) => {
-      if (!err) {
-        const box = document.getElementById('qrcode');
-        if (box) { box.innerHTML = ''; box.appendChild(canvas); }
-      }
-    });
+  // 生成二维码（用在线API，兼容性最好）
+  const box = document.getElementById('qrcode');
+  if (box) {
+    const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=1&data=' + encodeURIComponent(shareUrl);
+    box.innerHTML = '<img src="' + qrUrl + '" alt="分享二维码" style="width:180px;height:180px;">';
   }
 }
 
@@ -482,7 +497,7 @@ function selectAvatar(id) {
 function openProfileModal() {
   if (!state.member) return;
   document.getElementById('edit-nickname').value = state.member.nickname || '';
-  document.getElementById('edit-birthday').value = state.member.birthday || '';
+  document.getElementById('edit-phone').value = state.member.phone || '';
   document.getElementById('edit-debt').value = state.member.debt_amount || 0;
   selectAvatar(state.member.avatar_id || 0);
   document.getElementById('profile-modal').classList.add('show');
@@ -495,7 +510,7 @@ function closeProfileModal(e) {
 
 async function saveProfile() {
   const nickname = document.getElementById('edit-nickname').value.trim();
-  const birthday = document.getElementById('edit-birthday').value;
+  const phone = document.getElementById('edit-phone').value.trim();
   const debt = parseFloat(document.getElementById('edit-debt').value) || 0;
   try {
     const res = await fetch('/api/profile', {
@@ -503,7 +518,7 @@ async function saveProfile() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         wallet: state.wallet,
-        nickname, avatar_id: state.selectedAvatar, birthday, debt_amount: debt
+        nickname, avatar_id: state.selectedAvatar, phone, debt_amount: debt
       })
     });
     const data = await res.json();
