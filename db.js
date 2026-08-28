@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'renrenbang.db');
+// 确保目录存在
 const dbDir = path.dirname(DB_PATH);
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
@@ -25,6 +26,7 @@ db.exec(`
     nickname TEXT DEFAULT '',
     avatar_id INTEGER DEFAULT 0,
     birthday TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
     debt_amount REAL DEFAULT 0,
     is_member INTEGER DEFAULT 0,
     level INTEGER DEFAULT 0,
@@ -114,7 +116,7 @@ const dbapi = {
     const values = [];
     if (data.nickname !== undefined) { fields.push('nickname = ?'); values.push(data.nickname); }
     if (data.avatar_id !== undefined) { fields.push('avatar_id = ?'); values.push(data.avatar_id); }
-    if (data.birthday !== undefined) { fields.push('birthday = ?'); values.push(data.birthday); }
+    if (data.phone !== undefined) { fields.push('phone = ?'); values.push(data.phone); }
     if (data.debt_amount !== undefined) { fields.push('debt_amount = ?'); values.push(data.debt_amount); }
     if (fields.length === 0) return;
     values.push(w);
@@ -138,8 +140,8 @@ const dbapi = {
     db.prepare('UPDATE members SET thanks_card_sent = 1 WHERE wallet = ?').run(wallet.toLowerCase());
   },
 
-  // 获取推荐链（从直推人向上，最多64层）
-getUplinkChain(wallet, maxDepth = 64) {
+  // 获取推荐链（从直推人向上，最多64层，带去重防止循环）
+  getUplinkChain(wallet, maxDepth = 64) {
     const chain = [];
     const seen = new Set();
     let current = this.getMember(wallet);
@@ -147,7 +149,7 @@ getUplinkChain(wallet, maxDepth = 64) {
     let depth = 0;
     let ref = current.referrer;
     while (ref && depth < maxDepth) {
-      if (seen.has(ref)) break;
+      if (seen.has(ref)) break; // 循环了，停止
       seen.add(ref);
       const m = this.getMember(ref);
       if (!m) break;
@@ -165,8 +167,8 @@ getUplinkChain(wallet, maxDepth = 64) {
     `).all(wallet.toLowerCase());
   },
 
-  // 获取9层团队（递归）
-getTeam9Levels(wallet) {
+  // 获取9层团队（递归，带去重防止循环）
+  getTeam9Levels(wallet) {
     const result = [];
     const seen = new Set([wallet.toLowerCase()]);
     let currentLevel = [wallet.toLowerCase()];
@@ -175,6 +177,7 @@ getTeam9Levels(wallet) {
       const members = db.prepare(`
         SELECT * FROM members WHERE referrer IN (${placeholders}) ORDER BY created_at DESC
       `).all(...currentLevel);
+      // 去重：已经出现过的钱包不再加入
       const newMembers = members.filter(m => !seen.has(m.wallet));
       if (newMembers.length === 0) break;
       newMembers.forEach(m => seen.add(m.wallet));
