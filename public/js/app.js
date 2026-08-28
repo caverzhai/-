@@ -436,16 +436,21 @@ async function renderSharePage() {
     </div>
   `;
 
-  // 生成二维码
+// 生成二维码
   if (window.QRCode) {
-    QRCode.toCanvas(shareUrl, { width: 180, margin: 1 }, (err, canvas) => {
-      if (!err) {
-        const box = document.getElementById('qrcode');
-        if (box) { box.innerHTML = ''; box.appendChild(canvas); }
-      }
-    });
+    const box = document.getElementById('qrcode');
+    if (box) {
+      const canvas = document.createElement('canvas');
+      QRCode.toCanvas(canvas, shareUrl, { width: 180, margin: 1 }, (err) => {
+        if (!err) {
+          box.innerHTML = '';
+          box.appendChild(canvas);
+        } else {
+          console.error('二维码生成失败:', err);
+        }
+      });
+    }
   }
-}
 
 function copyLink() {
   const link = document.getElementById('share-link').textContent;
