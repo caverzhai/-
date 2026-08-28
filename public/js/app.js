@@ -138,7 +138,7 @@ async function buyCard() {
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
     const token = new ethers.Contract(state.config.token_address, ERC20_ABI, signer);
-    const amount = ethers.parseUnits(String(state.config.card_price), 6);
+    const amount = ethers.parseUnits(String(state.config.card_price), 18);
 
     showToast('正在发起转账，请在钱包中确认...');
     const tx = await token.transfer(state.config.total_wallet, amount);
@@ -171,7 +171,7 @@ async function buyThanksCard() {
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
     const token = new ethers.Contract(state.config.token_address, ERC20_ABI, signer);
-    const amount = ethers.parseUnits(String(state.config.thanks_price), 6);
+    const amount = ethers.parseUnits(String(state.config.thanks_price), 18);
 
     showToast('正在发起转账，请在钱包中确认...');
     const tx = await token.transfer(state.config.total_wallet, amount);
