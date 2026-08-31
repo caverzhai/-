@@ -80,14 +80,7 @@ app.post('/api/bind', async (req, res) => {
     let member = await db.getMember(w);
 
     if (member) {
-      if (!member.referrer && referrer && ethers.isAddress(referrer)) {
-        const refMember = await db.getMember(referrer.toLowerCase());
-        if (refMember) {
-          await db.rawExecute('UPDATE members SET referrer = ? WHERE wallet = ?', [referrer.toLowerCase(), w]);
-          member = await db.getMember(w);
-          return res.json({ success: true, member, isNew: false, referrerUpdated: true });
-        }
-      }
+      // 已注册会员，推荐关系永久固定，不可修改
       return res.json({ success: true, member, isNew: false });
     }
 
@@ -364,6 +357,23 @@ app.get('/api/debug', (req, res) => {
   });
 });
 
+// 临时修复接口：修正链头推荐关系（使用后可移除）
+app.post('/api/fix-genesis', async (req, res) => {
+  try {
+    const { wallet } = req.body;
+    if (!wallet || !ethers.isAddress(wallet)) {
+      return res.json({ success: false, msg: '无效的钱包地址' });
+    }
+    const w = wallet.toLowerCase();
+    await db.rawExecute('UPDATE members SET referrer = NULL WHERE wallet = ?', [w]);
+    const member = await db.getMember(w);
+    res.json({ success: true, msg: '链头推荐关系已修正', member });
+  } catch (e) {
+    console.error('修复链头失败:', e);
+    res.json({ success: false, msg: '修复失败: ' + e.message });
+  }
+});
+
 // 获取配置
 app.get('/api/config', (req, res) => {
   res.json({
@@ -373,7 +383,7 @@ app.get('/api/config', (req, res) => {
     card_price: CARD_PRICE,
     thanks_price: THANKS_PRICE,
     withdraw_fee: 1,
-    version: '2.1.4'
+    version: '2.1.5'
   });
 });
 
@@ -393,7 +403,7 @@ async function startServer() {
   }
 
   app.listen(PORT, () => {
-    console.log(`人人帮 DApp v2.1.4 后端已启动: http://localhost:${PORT}`);
+    console.log(`人人帮 DApp v2.1.5 后端已启动: http://localhost:${PORT}`);
     console.log(`数据库类型: ${db.isMySQL() ? 'MySQL' : 'SQLite'}`);
 
     if (process.env.PRIVATE_KEY && TOKEN_ADDRESS && TOTAL_WALLET) {
