@@ -360,3 +360,27 @@ body {
   border-color: rgba(212,175,55,0.3);
   font-weight: 600;
 }
+
+/* ===== 语言选择栏 ===== */
+.lang-bar {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 8px; padding: 8px 16px;
+  background: rgba(20,20,30,0.8);
+  border-bottom: 1px solid rgba(212,175,55,0.15);
+}
+.lang-bar span { font-size: 12px; color: #888; }
+.lang-bar select {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(212,175,55,0.3);
+  color: #f5d76e; padding: 5px 10px;
+  border-radius: 8px; font-size: 12px;
+  outline: none; cursor: pointer;
+}
+.lang-bar select option { background: #1a1a24; color: #e8e8f0; }
+
+/* ===== 版本号 ===== */
+.version-bar {
+  text-align: center; padding: 16px;
+  font-size: 11px; color: #555;
+  letter-spacing: 1px;
+}
