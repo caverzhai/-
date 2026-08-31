@@ -59,6 +59,9 @@ async function loadConfig() {
     const res = await fetch('/api/config');
     const data = await res.json();
     state.config = data;
+    // 动态显示后端版本号
+    const ver = document.getElementById('version-text');
+    if (ver && data.version) ver.textContent = 'v' + data.version;
   } catch (e) {
     console.error('加载配置失败', e);
   }
@@ -463,9 +466,16 @@ async function renderSharePage() {
   `;
 
   const box = document.getElementById('qrcode');
-  if (box) {
-    const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=1&data=' + encodeURIComponent(shareUrl);
-    box.innerHTML = '<img src="' + qrUrl + '" alt="分享二维码" style="width:180px;height:180px;">';
+  if (box && window.QRCode) {
+    box.innerHTML = '';
+    new QRCode(box, {
+      text: shareUrl,
+      width: 180,
+      height: 180,
+      colorDark: "#1a1a24",
+      colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.M
+    });
   }
 }
 
