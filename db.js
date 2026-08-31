@@ -28,10 +28,10 @@ async function initMySQL() {
       password: decodeURIComponent(url.password),
       database: decodeURIComponent(url.pathname.replace('/', '')),
       waitForConnections: true,
-      connectionLimit: 10,
+      connectionLimit: 20,
       queueLimit: 0,
-      connectTimeout: 10000,
-      acquireTimeout: 10000
+      connectTimeout: 15000,
+      acquireTimeout: 15000
     };
     console.log('[数据库] MySQL配置:', { host: config.host, port: config.port, user: config.user, database: config.database });
 
