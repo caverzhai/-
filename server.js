@@ -1,7 +1,6 @@
 /**
- * 人人帮 DApp 后端主服务
+ * 人人帮 DApp 后端主服务（异步版，支持MySQL）
  */
-// 全局错误保护：任何未处理的异常只记日志，不崩溃
 process.on('unhandledRejection', (reason) => {
   console.error('[全局] 未处理的Promise拒绝:', reason?.message || reason);
 });
@@ -32,23 +31,16 @@ const TOKEN_DECIMALS = 18;
 
 const provider = new ethers.JsonRpcProvider(RPC_URL);
 
-// ERC20 ABI（需要Transfer事件和balanceOf）
 const ERC20_ABI = [
   "event Transfer(address indexed from, address indexed to, uint256 value)",
   "function balanceOf(address account) external view returns (uint256)"
 ];
-// 注意：不在此处创建合约实例，避免空地址导致 ethers ENS 解析报错
 
 // ============ 链上验证 ============
-/**
- * 验证一笔转账是否真实：从from转了amount代币到总钱包
- */
 async function verifyTransfer(txHash, from, amount) {
   try {
     const receipt = await provider.getTransactionReceipt(txHash);
     if (!receipt || !receipt.status) return false;
-
-    // 解析Transfer事件
     const iface = new ethers.Interface(ERC20_ABI);
     for (const log of receipt.logs) {
       try {
@@ -63,7 +55,7 @@ async function verifyTransfer(txHash, from, amount) {
             return true;
           }
         }
-      } catch (e) { /* 不是我们合约的日志，跳过 */ }
+      } catch (e) { /* skip */ }
     }
     return false;
   } catch (e) {
@@ -75,135 +67,137 @@ async function verifyTransfer(txHash, from, amount) {
 // ============ API 路由 ============
 
 // 绑定推荐关系
-app.post('/api/bind', (req, res) => {
-  const { wallet, referrer } = req.body;
-  if (!wallet || !ethers.isAddress(wallet)) {
-    return res.json({ success: false, msg: '无效的钱包地址' });
-  }
-  const w = wallet.toLowerCase();
-  // 不能自己推荐自己
-  if (referrer && referrer.toLowerCase() === w) {
-    return res.json({ success: false, msg: '不能自己推荐自己' });
-  }
-  let member = db.getMember(w);
-
-  // 已存在会员
-  if (member) {
-    // 如果当前没有推荐人，且提供了有效推荐人，允许补绑定
-    if (!member.referrer && referrer && ethers.isAddress(referrer)) {
-      const refMember = db.getMember(referrer.toLowerCase());
-      if (refMember) {
-        db.raw.prepare('UPDATE members SET referrer = ? WHERE wallet = ?')
-          .run(referrer.toLowerCase(), w);
-        member = db.getMember(w);
-        return res.json({ success: true, member, isNew: false, referrerUpdated: true });
-      }
+app.post('/api/bind', async (req, res) => {
+  try {
+    const { wallet, referrer } = req.body;
+    if (!wallet || !ethers.isAddress(wallet)) {
+      return res.json({ success: false, msg: '无效的钱包地址' });
     }
-    return res.json({ success: true, member, isNew: false });
-  }
+    const w = wallet.toLowerCase();
+    if (referrer && referrer.toLowerCase() === w) {
+      return res.json({ success: false, msg: '不能自己推荐自己' });
+    }
+    let member = await db.getMember(w);
 
-  // 新会员必须有推荐人（但系统第一个人除外）
-  const memberCount = db.raw.prepare('SELECT COUNT(*) as cnt FROM members').get().cnt;
-  if (memberCount === 0) {
-    // 系统第一个人，允许无推荐人注册，成为链头
-    member = db.createMember(w, null);
-    return res.json({ success: true, member, isNew: true, isGenesis: true });
-  }
+    if (member) {
+      if (!member.referrer && referrer && ethers.isAddress(referrer)) {
+        const refMember = await db.getMember(referrer.toLowerCase());
+        if (refMember) {
+          await db.rawExecute('UPDATE members SET referrer = ? WHERE wallet = ?', [referrer.toLowerCase(), w]);
+          member = await db.getMember(w);
+          return res.json({ success: true, member, isNew: false, referrerUpdated: true });
+        }
+      }
+      return res.json({ success: true, member, isNew: false });
+    }
 
-  if (!referrer || !ethers.isAddress(referrer)) {
-    return res.json({ success: false, msg: '请通过推荐人分享链接注册' });
+    // 系统第一个人除外
+    const countResult = await db.rawQuery('SELECT COUNT(*) as cnt FROM members');
+    const memberCount = countResult[0]?.cnt || 0;
+    if (memberCount === 0) {
+      member = await db.createMember(w, null);
+      return res.json({ success: true, member, isNew: true, isGenesis: true });
+    }
+
+    if (!referrer || !ethers.isAddress(referrer)) {
+      return res.json({ success: false, msg: '请通过推荐人分享链接注册' });
+    }
+    const ref = referrer.toLowerCase();
+    const refMember = await db.getMember(ref);
+    if (!refMember) {
+      return res.json({ success: false, msg: '推荐人不存在' });
+    }
+    member = await db.createMember(w, ref);
+    res.json({ success: true, member, isNew: true });
+  } catch (e) {
+    console.error('绑定失败:', e);
+    res.json({ success: false, msg: '服务器错误' });
   }
-  const ref = referrer.toLowerCase();
-  const refMember = db.getMember(ref);
-  if (!refMember) {
-    return res.json({ success: false, msg: '推荐人不存在' });
-  }
-  member = db.createMember(w, ref);
-  res.json({ success: true, member, isNew: true });
 });
 
 // 获取会员信息
-app.get('/api/member/:wallet', (req, res) => {
-  const { wallet } = req.params;
-  const member = db.getMember(wallet);
-  if (!member) return res.json({ success: false, msg: '会员不存在' });
-  const balance = db.getBalance(wallet);
-  const referrerInfo = member.referrer ? db.getMember(member.referrer) : null;
-  res.json({
-    success: true,
-    member: {
-      ...member,
-      balance: balance,
-      referrer_nickname: referrerInfo ? referrerInfo.nickname : '',
-      referrer_avatar: referrerInfo ? referrerInfo.avatar_id : 0
-    }
-  });
+app.get('/api/member/:wallet', async (req, res) => {
+  try {
+    const { wallet } = req.params;
+    const member = await db.getMember(wallet);
+    if (!member) return res.json({ success: false, msg: '会员不存在' });
+    const balance = await db.getBalance(wallet);
+    const referrerInfo = member.referrer ? await db.getMember(member.referrer) : null;
+    res.json({
+      success: true,
+      member: {
+        ...member,
+        balance: balance,
+        referrer_nickname: referrerInfo ? referrerInfo.nickname : '',
+        referrer_avatar: referrerInfo ? referrerInfo.avatar_id : 0
+      }
+    });
+  } catch (e) {
+    console.error('获取会员失败:', e);
+    res.json({ success: false, msg: '服务器错误' });
+  }
 });
 
 // 更新资料
-app.post('/api/profile', (req, res) => {
-  const { wallet, nickname, avatar_id, phone, debt_amount } = req.body;
-  if (!wallet) return res.json({ success: false, msg: '缺少钱包地址' });
-  const member = db.getMember(wallet);
-  if (!member) return res.json({ success: false, msg: '会员不存在' });
-  db.updateProfile(wallet, { nickname, avatar_id, phone, debt_amount });
-  res.json({ success: true, member: db.getMember(wallet) });
+app.post('/api/profile', async (req, res) => {
+  try {
+    const { wallet, nickname, avatar_id, phone, debt_amount } = req.body;
+    if (!wallet) return res.json({ success: false, msg: '缺少钱包地址' });
+    const member = await db.getMember(wallet);
+    if (!member) return res.json({ success: false, msg: '会员不存在' });
+    await db.updateProfile(wallet, { nickname, avatar_id, phone, debt_amount });
+    res.json({ success: true, member: await db.getMember(wallet) });
+  } catch (e) {
+    console.error('更新资料失败:', e);
+    res.json({ success: false, msg: '服务器错误' });
+  }
 });
 
-// 购买互助卡（验证链上转账后执行分配）
+// 购买互助卡
 app.post('/api/buy-card', async (req, res) => {
-  const { wallet, tx_hash } = req.body;
-  if (!wallet || !tx_hash) {
-    return res.json({ success: false, msg: '参数不全' });
-  }
-  const member = db.getMember(wallet);
-  if (!member) return res.json({ success: false, msg: '请先绑定推荐关系' });
-  if (member.is_member) return res.json({ success: false, msg: '已是会员' });
-
-  // 防重复
-  if (db.getCardPurchaseByTx(tx_hash)) {
-    return res.json({ success: false, msg: '该交易已处理' });
-  }
-
-  // 链上验证
-  const valid = await verifyTransfer(tx_hash, wallet, CARD_PRICE);
-  if (!valid) {
-    return res.json({ success: false, msg: '链上转账验证失败，请确认交易已确认且金额正确' });
-  }
-
-  // 事务内执行分配
   try {
-    const result = db.raw.transaction(() => {
-      // 1. 创建购卡记录（先拿ID）
-      const purchaseId = db.createCardPurchase(wallet, tx_hash, []);
-      // 2. 执行分配
-      const distribution = distributeCard(wallet, purchaseId);
-      // 3. 更新购卡记录的分配明细
-      db.raw.prepare('UPDATE card_purchases SET distribution = ? WHERE id = ?')
-        .run(JSON.stringify(distribution), purchaseId);
-      // 4. 标记为正式会员
-      db.setMember(wallet);
-      // 5. 直推人 direct_count + 1
+    const { wallet, tx_hash } = req.body;
+    if (!wallet || !tx_hash) {
+      return res.json({ success: false, msg: '参数不全' });
+    }
+    const member = await db.getMember(wallet);
+    if (!member) return res.json({ success: false, msg: '请先绑定推荐关系' });
+    if (member.is_member) return res.json({ success: false, msg: '已是会员' });
+
+    if (await db.getCardPurchaseByTx(tx_hash)) {
+      return res.json({ success: false, msg: '该交易已处理' });
+    }
+
+    const valid = await verifyTransfer(tx_hash, wallet, CARD_PRICE);
+    if (!valid) {
+      return res.json({ success: false, msg: '链上转账验证失败，请确认交易已确认且金额正确' });
+    }
+
+    const result = await db.transaction(async (txDb) => {
+      const purchaseId = await txDb.createCardPurchase(wallet, tx_hash, []);
+      const distribution = await distributeCard(wallet, purchaseId, txDb);
+      await txDb.updateCardPurchase(purchaseId, distribution);
+      await txDb.setMember(wallet);
       if (member.referrer) {
-        db.incDirectCount(member.referrer);
+        await txDb.incDirectCount(member.referrer);
       }
-      // 6. 向上9层 team_count + 1
-      const uplink = db.incTeamCountUp9(wallet);
-      // 7. 检查直推人是否升级V9
+      const uplink = await txDb.getUplinkChain(wallet, 9);
+      for (const m of uplink) {
+        await txDb.incTeamCount(m.wallet);
+      }
       let upgraded = [];
       if (member.referrer) {
-        if (checkAndUpgradeV9(member.referrer)) {
+        if (await checkAndUpgradeV9(member.referrer, txDb)) {
           upgraded.push(member.referrer);
         }
       }
-      // 8. 检查所有刚增加team_count的上级是否升级V9（主要是直推人，其他人team_count增加也可能过80）
       for (const m of uplink) {
-        if (checkAndUpgradeV9(m.wallet)) {
+        if (await checkAndUpgradeV9(m.wallet, txDb)) {
           upgraded.push(m.wallet);
         }
       }
       return { distribution, upgraded };
-    })();
+    });
 
     res.json({
       success: true,
@@ -217,40 +211,37 @@ app.post('/api/buy-card', async (req, res) => {
   }
 });
 
-// 购买感恩卡（300代币，给直推人）
+// 购买感恩卡
 app.post('/api/buy-thanks', async (req, res) => {
-  const { wallet, tx_hash } = req.body;
-  if (!wallet || !tx_hash) {
-    return res.json({ success: false, msg: '参数不全' });
-  }
-  const member = db.getMember(wallet);
-  if (!member || !member.is_member) {
-    return res.json({ success: false, msg: '仅会员可购买感恩卡' });
-  }
-  if (!member.referrer) {
-    return res.json({ success: false, msg: '没有推荐人，无法送感恩卡' });
-  }
-  if (member.thanks_card_sent) {
-    return res.json({ success: false, msg: '已送过感恩卡' });
-  }
-
-  // 链上验证
-  const valid = await verifyTransfer(tx_hash, wallet, THANKS_PRICE);
-  if (!valid) {
-    return res.json({ success: false, msg: '链上转账验证失败' });
-  }
-
   try {
-    const result = db.raw.transaction(() => {
-      const purchaseId = db.createThanksPurchase(wallet, member.referrer, tx_hash);
-      // 推荐人收到300可提现余额
-      db.addBalance(member.referrer, THANKS_PRICE, 'income_thanks', purchaseId);
-      // 标记已送
-      db.markThanksSent(wallet);
-      // 检查自己是否升级V9
-      const upgraded = checkAndUpgradeV9(wallet);
+    const { wallet, tx_hash } = req.body;
+    if (!wallet || !tx_hash) {
+      return res.json({ success: false, msg: '参数不全' });
+    }
+    const member = await db.getMember(wallet);
+    if (!member || !member.is_member) {
+      return res.json({ success: false, msg: '仅会员可购买感恩卡' });
+    }
+    if (!member.referrer) {
+      return res.json({ success: false, msg: '没有推荐人，无法送感恩卡' });
+    }
+    if (member.thanks_card_sent) {
+      return res.json({ success: false, msg: '已送过感恩卡' });
+    }
+
+    const valid = await verifyTransfer(tx_hash, wallet, THANKS_PRICE);
+    if (!valid) {
+      return res.json({ success: false, msg: '链上转账验证失败' });
+    }
+
+    const result = await db.transaction(async (txDb) => {
+      const purchaseId = await txDb.createThanksPurchase(wallet, member.referrer, tx_hash);
+      await txDb.addBalance(member.referrer, THANKS_PRICE, 'income_thanks', purchaseId);
+      await txDb.markThanksSent(wallet);
+      const upgraded = await checkAndUpgradeV9(wallet, txDb);
       return { upgraded };
-    })();
+    });
+
     res.json({
       success: true,
       msg: '感恩卡已送出，推荐人获得300可提现余额',
@@ -263,32 +254,30 @@ app.post('/api/buy-thanks', async (req, res) => {
 });
 
 // 申请提现
-app.post('/api/withdraw', (req, res) => {
-  const { wallet, amount } = req.body;
-  if (!wallet || !amount || amount <= 0) {
-    return res.json({ success: false, msg: '参数错误' });
-  }
-  const member = db.getMember(wallet);
-  if (!member || !member.is_member) {
-    return res.json({ success: false, msg: '仅会员可提现' });
-  }
-  const balance = db.getBalance(wallet);
-  if (balance < amount) {
-    return res.json({ success: false, msg: '余额不足' });
-  }
-
+app.post('/api/withdraw', async (req, res) => {
   try {
-    const result = db.raw.transaction(() => {
-      // 扣减余额（手续费从提现金额里出，不再额外扣）
-      db.subBalance(wallet, amount, 'withdraw', null);
-      // 创建提现订单（实际到账=amount-1）
-      const wId = db.createWithdrawal(wallet, amount);
-      return wId;
-    })();
+    const { wallet, amount } = req.body;
+    if (!wallet || !amount || amount <= 0) {
+      return res.json({ success: false, msg: '参数错误' });
+    }
+    const member = await db.getMember(wallet);
+    if (!member || !member.is_member) {
+      return res.json({ success: false, msg: '仅会员可提现' });
+    }
+    const balance = await db.getBalance(wallet);
+    if (balance < amount) {
+      return res.json({ success: false, msg: '余额不足' });
+    }
+
+    const wId = await db.transaction(async (txDb) => {
+      await txDb.subBalance(wallet, amount, 'withdraw', null);
+      return await txDb.createWithdrawal(wallet, amount);
+    });
+
     res.json({
       success: true,
-      msg: `提现申请已提交，实际到账 ${amount - 1} 代币，处理中`,
-      withdrawal_id: result
+      msg: `提现申请已提交，实际到账 ${amount - 1} U，处理中`,
+      withdrawal_id: wId
     });
   } catch (e) {
     console.error('提现申请失败:', e);
@@ -297,51 +286,63 @@ app.post('/api/withdraw', (req, res) => {
 });
 
 // 获取9层团队
-app.get('/api/team/:wallet', (req, res) => {
-  const { wallet } = req.params;
-  const team = db.getTeam9Levels(wallet);
-  const total = team.reduce((sum, lv) => sum + lv.members.length, 0);
-  res.json({ success: true, team, total });
+app.get('/api/team/:wallet', async (req, res) => {
+  try {
+    const { wallet } = req.params;
+    const team = await db.getTeam9Levels(wallet);
+    const total = team.reduce((sum, lv) => sum + lv.members.length, 0);
+    res.json({ success: true, team, total });
+  } catch (e) {
+    console.error('获取团队失败:', e);
+    res.json({ success: false, msg: '服务器错误' });
+  }
 });
 
 // 获取流水
-app.get('/api/ledger/:wallet', (req, res) => {
-  const { wallet } = req.params;
-  const limit = parseInt(req.query.limit) || 50;
-  const ledger = db.getLedger(wallet, limit);
-  res.json({ success: true, ledger });
+app.get('/api/ledger/:wallet', async (req, res) => {
+  try {
+    const { wallet } = req.params;
+    const limit = parseInt(req.query.limit) || 50;
+    const ledger = await db.getLedger(wallet, limit);
+    res.json({ success: true, ledger });
+  } catch (e) {
+    console.error('获取流水失败:', e);
+    res.json({ success: false, msg: '服务器错误' });
+  }
 });
 
 // 获取提现记录
-app.get('/api/withdrawals/:wallet', (req, res) => {
-  const { wallet } = req.params;
-  const records = db.raw.prepare(
-    'SELECT * FROM withdrawals WHERE wallet = ? ORDER BY id DESC LIMIT 50'
-  ).all(wallet.toLowerCase());
-  res.json({ success: true, withdrawals: records });
+app.get('/api/withdrawals/:wallet', async (req, res) => {
+  try {
+    const { wallet } = req.params;
+    const records = await db.rawQuery(
+      'SELECT * FROM withdrawals WHERE wallet = ? ORDER BY id DESC LIMIT 50',
+      [wallet.toLowerCase()]
+    );
+    res.json({ success: true, withdrawals: records });
+  } catch (e) {
+    console.error('获取提现记录失败:', e);
+    res.json({ success: false, msg: '服务器错误' });
+  }
 });
 
-// ============ 数据导出/导入（备份用） ============
-// 导出所有数据为JSON（浏览器直接访问即可下载）
-app.get('/api/export', (req, res) => {
+// 导出数据
+app.get('/api/export', async (req, res) => {
   try {
-    const members = db.raw.prepare('SELECT * FROM members').all();
-    const balances = db.raw.prepare('SELECT * FROM balances').all();
-    const ledger = db.raw.prepare('SELECT * FROM ledger').all();
-    const cardPurchases = db.raw.prepare('SELECT * FROM card_purchases').all();
-    const thanksPurchases = db.raw.prepare('SELECT * FROM thanks_purchases').all();
-    const withdrawals = db.raw.prepare('SELECT * FROM withdrawals').all();
+    const members = await db.rawQuery('SELECT * FROM members');
+    const balances = await db.rawQuery('SELECT * FROM balances');
+    const ledger = await db.rawQuery('SELECT * FROM ledger');
+    const cardPurchases = await db.rawQuery('SELECT * FROM card_purchases');
+    const thanksPurchases = await db.rawQuery('SELECT * FROM thanks_purchases');
+    const withdrawals = await db.rawQuery('SELECT * FROM withdrawals');
 
     const data = {
       exported_at: new Date().toISOString(),
-      members,
-      balances,
-      ledger,
+      members, balances, ledger,
       card_purchases: cardPurchases,
       thanks_purchases: thanksPurchases,
       withdrawals
     };
-
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', 'attachment; filename=renrenbang-backup.json');
     res.json(data);
@@ -350,88 +351,20 @@ app.get('/api/export', (req, res) => {
   }
 });
 
-// 导入数据（从JSON恢复，需要管理员密码）
-app.post('/api/import', (req, res) => {
-  const { password, data } = req.body;
-  // 需要配置 ADMIN_PASSWORD 环境变量才能导入
-  if (!process.env.ADMIN_PASSWORD) {
-    return res.json({ success: false, msg: '未配置管理员密码，导入功能已禁用' });
-  }
-  if (password !== process.env.ADMIN_PASSWORD) {
-    return res.json({ success: false, msg: '密码错误' });
-  }
-  if (!data || !data.members) {
-    return res.json({ success: false, msg: '数据格式错误' });
-  }
-
-  try {
-    db.raw.transaction(() => {
-      // 清空所有表（顺序：有外键依赖的先清）
-      db.raw.prepare('DELETE FROM ledger').run();
-      db.raw.prepare('DELETE FROM withdrawals').run();
-      db.raw.prepare('DELETE FROM thanks_purchases').run();
-      db.raw.prepare('DELETE FROM card_purchases').run();
-      db.raw.prepare('DELETE FROM balances').run();
-      db.raw.prepare('DELETE FROM members').run();
-
-      // 插入 members
-      const memberStmt = db.raw.prepare(`INSERT OR REPLACE INTO members
-        (wallet, referrer, nickname, avatar_id, birthday, debt_amount, is_member, level, direct_count, team_count, thanks_card_sent, created_at, become_member_at)
-        VALUES (@wallet, @referrer, @nickname, @avatar_id, @birthday, @debt_amount, @is_member, @level, @direct_count, @team_count, @thanks_card_sent, @created_at, @become_member_at)`);
-      for (const row of data.members) memberStmt.run(row);
-
-      // 插入 balances
-      const balStmt = db.raw.prepare('INSERT OR REPLACE INTO balances (wallet, available, updated_at) VALUES (@wallet, @available, @updated_at)');
-      for (const row of (data.balances || [])) balStmt.run(row);
-
-      // 插入 ledger
-      const ledgerStmt = db.raw.prepare('INSERT OR REPLACE INTO ledger (id, wallet, type, amount, balance_after, ref_id, created_at) VALUES (@id, @wallet, @type, @amount, @balance_after, @ref_id, @created_at)');
-      for (const row of (data.ledger || [])) ledgerStmt.run(row);
-
-      // 插入 card_purchases
-      const cardStmt = db.raw.prepare('INSERT OR REPLACE INTO card_purchases (id, buyer, tx_hash, amount, distribution, status, created_at) VALUES (@id, @buyer, @tx_hash, @amount, @distribution, @status, @created_at)');
-      for (const row of (data.card_purchases || [])) cardStmt.run(row);
-
-      // 插入 thanks_purchases
-      const thanksStmt = db.raw.prepare('INSERT OR REPLACE INTO thanks_purchases (id, buyer, receiver, tx_hash, amount, status, created_at) VALUES (@id, @buyer, @receiver, @tx_hash, @amount, @status, @created_at)');
-      for (const row of (data.thanks_purchases || [])) thanksStmt.run(row);
-
-      // 插入 withdrawals
-      const wdStmt = db.raw.prepare('INSERT OR REPLACE INTO withdrawals (id, wallet, amount, actual_amount, tx_hash, status, created_at, processed_at) VALUES (@id, @wallet, @amount, @actual_amount, @tx_hash, @status, @created_at, @processed_at)');
-      for (const row of (data.withdrawals || [])) wdStmt.run(row);
-    })();
-
-    res.json({
-      success: true,
-      msg: '导入成功',
-      counts: {
-        members: data.members.length,
-        balances: (data.balances || []).length,
-        ledger: (data.ledger || []).length
-      }
-    });
-  } catch (e) {
-    console.error('导入失败:', e);
-    res.json({ success: false, msg: '导入失败: ' + e.message });
-  }
-});
-
-// 调试接口：查看环境变量注入状态
+// 调试接口
 app.get('/api/debug', (req, res) => {
   res.json({
     success: true,
+    db_type: db.isMySQL() ? 'MySQL' : 'SQLite',
     token_address_set: !!process.env.TOKEN_ADDRESS,
-    token_address_preview: process.env.TOKEN_ADDRESS ? process.env.TOKEN_ADDRESS.slice(0, 10) + '...' : '(empty)',
     total_wallet_set: !!process.env.TOTAL_WALLET,
-    total_wallet_preview: process.env.TOTAL_WALLET ? process.env.TOTAL_WALLET.slice(0, 10) + '...' : '(empty)',
     private_key_set: !!process.env.PRIVATE_KEY,
-    rpc_url: process.env.RPC_URL || '(empty)',
-    db_path: process.env.DB_PATH || '(default)',
+    mysql_url_set: !!(process.env.MYSQL_URL || process.env.DATABASE_URL),
     port: process.env.PORT || '(default)'
   });
 });
 
-// 获取配置（前端用）
+// 获取配置
 app.get('/api/config', (req, res) => {
   res.json({
     success: true,
@@ -439,34 +372,42 @@ app.get('/api/config', (req, res) => {
     total_wallet: TOTAL_WALLET,
     card_price: CARD_PRICE,
     thanks_price: THANKS_PRICE,
-    withdraw_fee: 1
+    withdraw_fee: 1,
+    version: '2.1.1'
   });
 });
 
 // ============ 启动 ============
-// 启动时自动修复错误数据：自己推荐自己的，清空推荐人
-try {
-  const fixed = db.raw.prepare("UPDATE members SET referrer = NULL WHERE referrer = wallet").run();
-  if (fixed.changes > 0) {
-    console.log(`[修复] 已清理 ${fixed.changes} 条自己推荐自己的错误数据`);
+async function startServer() {
+  // 初始化数据库（MySQL优先，失败回退SQLite）
+  await db.init();
+
+  // 启动时修复错误数据
+  try {
+    const fixed = await db.rawExecute("UPDATE members SET referrer = NULL WHERE referrer = wallet");
+    if (fixed.changes > 0) {
+      console.log(`[修复] 已清理 ${fixed.changes} 条自己推荐自己的错误数据`);
+    }
+  } catch (e) {
+    console.error('[修复] 清理错误数据失败:', e.message);
   }
-} catch (e) {
-  console.error('[修复] 清理错误数据失败:', e.message);
+
+  app.listen(PORT, () => {
+    console.log(`人人帮 DApp v2.1.1 后端已启动: http://localhost:${PORT}`);
+    console.log(`数据库类型: ${db.isMySQL() ? 'MySQL' : 'SQLite'}`);
+
+    if (process.env.PRIVATE_KEY && TOKEN_ADDRESS && TOTAL_WALLET) {
+      try {
+        withdrawEngine.init(RPC_URL, process.env.PRIVATE_KEY, TOKEN_ADDRESS);
+        withdrawEngine.start();
+        console.log('[提现引擎] 启动成功');
+      } catch (e) {
+        console.error('[提现引擎] 启动失败:', e.message);
+      }
+    } else {
+      console.log('[警告] 未配置 PRIVATE_KEY / TOKEN_ADDRESS / TOTAL_WALLET，提现引擎未启动');
+    }
+  });
 }
 
-app.listen(PORT, () => {
-  console.log(`人人帮 DApp 后端已启动: http://localhost:${PORT}`);
-  // 初始化提现引擎（加try-catch，初始化失败不影响主服务）
-  if (process.env.PRIVATE_KEY && TOKEN_ADDRESS && TOTAL_WALLET) {
-    try {
-      withdrawEngine.init(RPC_URL, process.env.PRIVATE_KEY, TOKEN_ADDRESS);
-      withdrawEngine.start();
-      console.log('[提现引擎] 启动成功');
-    } catch (e) {
-      console.error('[提现引擎] 启动失败（不影响网站访问）:', e.message);
-      console.error('[提现引擎] 请检查 PRIVATE_KEY / TOKEN_ADDRESS / TOTAL_WALLET 格式是否正确');
-    }
-  } else {
-    console.log('[警告] 未配置 PRIVATE_KEY / TOKEN_ADDRESS / TOTAL_WALLET，提现引擎未启动');
-  }
-});
+startServer();
