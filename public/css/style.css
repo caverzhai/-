@@ -1,4 +1,4 @@
-* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+﻿* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   background: #0a0a12;
@@ -16,14 +16,6 @@ body {
   position: sticky; top: 0; z-index: 100;
   border-bottom: 1px solid rgba(212,175,55,0.25);
 }
-.nav-brand {
-  font-size: 22px; font-weight: 800;
-  background: linear-gradient(135deg, #f5d76e, #d4af37, #b8860b);
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  background-clip: text;
-  cursor: pointer;
-  letter-spacing: 1px;
-}
 .nav-links { display: flex; gap: 6px; }
 .nav-links a {
   font-size: 14px; color: #888; cursor: pointer; padding: 6px 12px;
@@ -34,6 +26,14 @@ body {
   background: rgba(212,175,55,0.12);
   font-weight: 600;
 }
+.nav-lang {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(212,175,55,0.3);
+  color: #f5d76e; padding: 5px 10px;
+  border-radius: 8px; font-size: 12px;
+  outline: none; cursor: pointer;
+}
+.nav-lang option { background: #1a1a24; color: #e8e8f0; }
 
 /* ===== 页面 ===== */
 .page { display: none; padding: 16px; }
