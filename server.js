@@ -373,7 +373,7 @@ app.get('/api/config', (req, res) => {
     card_price: CARD_PRICE,
     thanks_price: THANKS_PRICE,
     withdraw_fee: 1,
-    version: '2.1.1'
+    version: '2.1.2'
   });
 });
 
@@ -393,7 +393,7 @@ async function startServer() {
   }
 
   app.listen(PORT, () => {
-    console.log(`人人帮 DApp v2.1.1 后端已启动: http://localhost:${PORT}`);
+    console.log(`人人帮 DApp v2.1.2 后端已启动: http://localhost:${PORT}`);
     console.log(`数据库类型: ${db.isMySQL() ? 'MySQL' : 'SQLite'}`);
 
     if (process.env.PRIVATE_KEY && TOKEN_ADDRESS && TOTAL_WALLET) {
