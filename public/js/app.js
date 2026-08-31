@@ -1,5 +1,5 @@
 /**
- * 人人帮 DApp 前端逻辑
+ * 人人帮 DApp 前端逻辑（多语言版）
  */
 
 // ============ 全局状态 ============
@@ -18,19 +18,38 @@ const ERC20_ABI = [
   "function balanceOf(address account) external view returns (uint256)"
 ];
 
+// ============ 多语言应用 ============
+function applyI18n() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    const val = t(key);
+    if (val && val !== key) el.textContent = val;
+  });
+  document.querySelectorAll('[data-i18n-ph]').forEach(el => {
+    const key = el.getAttribute('data-i18n-ph');
+    const val = t(key);
+    if (val && val !== key) el.placeholder = val;
+  });
+  // 设置语言选择器
+  const sel = document.getElementById('lang-select');
+  if (sel) sel.value = currentLang;
+  // 设置版本号
+  const ver = document.getElementById('version-text');
+  if (ver) ver.textContent = t('version');
+}
+
 // ============ 初始化 ============
 window.addEventListener('DOMContentLoaded', async () => {
-  // 读取URL中的ref参数
   const urlParams = new URLSearchParams(window.location.search);
   state.refAddress = urlParams.get('ref');
 
+  applyI18n();
   await loadConfig();
   renderHomeAction();
   initAvatarGrid();
 
-  // 如果有ref参数，提示用户连接钱包绑定
   if (state.refAddress) {
-    showToast('检测到推荐链接，连接钱包即可绑定推荐关系');
+    showToast(t('toast.refDetected'));
   }
 });
 
@@ -55,10 +74,10 @@ async function connectWallet() {
     const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
     state.wallet = accounts[0];
     await bindMember();
-    showToast('钱包已连接');
+    showToast(t('toast.connected'));
     refreshMember();
   } catch (e) {
-    showToast('连接失败: ' + e.message);
+    showToast(t('toast.connectFail') + ': ' + e.message);
   }
 }
 
@@ -73,8 +92,10 @@ async function bindMember() {
     if (data.success) {
       state.member = data.member;
       if (data.isNew && state.refAddress) {
-        showToast('推荐关系已绑定');
+        showToast(t('toast.bound'));
       }
+    } else {
+      showToast(data.msg || t('toast.buyFail'));
     }
   } catch (e) {
     console.error('绑定失败', e);
@@ -112,25 +133,26 @@ function navigate(page) {
 function renderHomeAction() {
   const el = document.getElementById('home-action');
   if (!state.wallet) {
-    el.innerHTML = '<button class="btn btn-primary" onclick="connectWallet()">连接钱包</button>';
+    el.innerHTML = '<button class="btn btn-primary" onclick="connectWallet()">' + t('action.connect') + '</button>';
     return;
   }
   if (!state.member || !state.member.is_member) {
+    const price = state.config?.card_price || 180;
     el.innerHTML = `
-      <button class="btn btn-primary" onclick="buyCard()">购买互助卡（${state.config?.card_price || 180}U）成为会员</button>
-      <p style="text-align:center;font-size:12px;color:#999;margin-top:8px;">购买后即可生成专属分享链接</p>
+      <button class="btn btn-primary" onclick="buyCard()">${t('action.buyCard').replace('{n}', price)}</button>
+      <p style="text-align:center;font-size:12px;color:#999;margin-top:8px;">${t('action.buyCardHint')}</p>
     `;
   } else {
     el.innerHTML = `
-      <button class="btn btn-success" onclick="navigate('share')">生成分享链接</button>
-      <button class="btn btn-secondary" onclick="navigate('my')">进入我的后台</button>
+      <button class="btn btn-success" onclick="navigate('share')">${t('action.genLink')}</button>
+      <button class="btn btn-secondary" onclick="navigate('my')">${t('action.enterMy')}</button>
     `;
   }
 }
 
 // ============ 购买互助卡 ============
 async function buyCard() {
-  if (!state.wallet) { showToast('请先连接钱包'); return; }
+  if (!state.wallet) { showToast(t('my.connectFirst')); return; }
   if (!state.config?.token_address || !state.config?.total_wallet) {
     showToast('系统配置未完成'); return;
   }
@@ -140,12 +162,11 @@ async function buyCard() {
     const token = new ethers.Contract(state.config.token_address, ERC20_ABI, signer);
     const amount = ethers.parseUnits(String(state.config.card_price), 18);
 
-    showToast('正在发起转账，请在钱包中确认...');
+    showToast(t('toast.processing'));
     const tx = await token.transfer(state.config.total_wallet, amount);
-    showToast('交易已提交，等待链上确认...');
+    showToast(t('toast.submitted'));
     await tx.wait();
 
-    // 通知后端验证并分配
     const res = await fetch('/api/buy-card', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -153,38 +174,29 @@ async function buyCard() {
     });
     const data = await res.json();
     if (data.success) {
-      showToast('购卡成功！已成为会员');
+      showToast(t('toast.buySuccess'));
       await refreshMember();
     } else {
-      showToast('失败: ' + data.msg);
+      showToast(t('toast.buyFail') + ': ' + data.msg);
     }
   } catch (e) {
-    const msg = e.message || '';
-    if (msg.includes('user rejected') || msg.includes('User rejected')) {
-      showToast('已取消转账');
-    } else if (msg.includes('insufficient') || msg.includes('missing revert data') || msg.includes('CALL_EXCEPTION')) {
-      showToast('钱包余额不足，请确认有足够的USDT');
-    } else if (msg.includes('network') || msg.includes('timeout')) {
-      showToast('网络错误，请重试');
-    } else {
-      showToast('转账失败，请检查钱包余额');
-    }
+    handleTransferError(e);
   }
 }
 
 // ============ 购买感恩卡 ============
 async function buyThanksCard() {
-  if (!state.wallet) { showToast('请先连接钱包'); return; }
-  if (state.member?.thanks_card_sent) { showToast('已送过感恩卡'); return; }
+  if (!state.wallet) { showToast(t('my.connectFirst')); return; }
+  if (state.member?.thanks_card_sent) { showToast(t('toast.alreadyThanks')); return; }
   try {
     const provider = new ethers.BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
     const token = new ethers.Contract(state.config.token_address, ERC20_ABI, signer);
     const amount = ethers.parseUnits(String(state.config.thanks_price), 18);
 
-    showToast('正在发起转账，请在钱包中确认...');
+    showToast(t('toast.processing'));
     const tx = await token.transfer(state.config.total_wallet, amount);
-    showToast('交易已提交，等待确认...');
+    showToast(t('toast.submitted'));
     await tx.wait();
 
     const res = await fetch('/api/buy-thanks', {
@@ -194,36 +206,40 @@ async function buyThanksCard() {
     });
     const data = await res.json();
     if (data.success) {
-      showToast(data.upgraded ? '感恩卡已送出，恭喜升级V9！' : '感恩卡已送出');
+      showToast(data.upgraded ? t('toast.thanksUpgraded') : t('toast.thanksSuccess'));
       await refreshMember();
     } else {
-      showToast('失败: ' + data.msg);
+      showToast(t('toast.buyFail') + ': ' + data.msg);
     }
   } catch (e) {
-    const msg = e.message || '';
-    if (msg.includes('user rejected') || msg.includes('User rejected')) {
-      showToast('已取消转账');
-    } else if (msg.includes('insufficient') || msg.includes('missing revert data') || msg.includes('CALL_EXCEPTION')) {
-      showToast('钱包余额不足，请确认有足够的USDT');
-    } else if (msg.includes('network') || msg.includes('timeout')) {
-      showToast('网络错误，请重试');
-    } else {
-      showToast('转账失败，请检查钱包余额');
-    }
+    handleTransferError(e);
+  }
+}
+
+function handleTransferError(e) {
+  const msg = e.message || '';
+  if (msg.includes('user rejected') || msg.includes('User rejected')) {
+    showToast(t('toast.rejected'));
+  } else if (msg.includes('insufficient') || msg.includes('missing revert data') || msg.includes('CALL_EXCEPTION')) {
+    showToast(t('toast.insufficient'));
+  } else if (msg.includes('network') || msg.includes('timeout')) {
+    showToast(t('toast.networkError'));
+  } else {
+    showToast(t('toast.transferFail'));
   }
 }
 
 // ============ 提现 ============
 async function withdraw() {
-  if (!state.wallet) { showToast('请先连接钱包'); return; }
+  if (!state.wallet) { showToast(t('my.connectFirst')); return; }
   const balance = state.member?.balance || 0;
-  if (balance <= 0) { showToast('余额为0'); return; }
+  if (balance <= 0) { showToast(t('toast.balanceZero')); return; }
 
-  const amount = prompt(`可提现余额：${balance}枚\n每笔手续费1枚\n请输入提现数量：`, String(balance));
+  const amount = prompt(`${t('my.balance')}：${balance}U\n${t('profile.goal') ? '' : ''}每笔手续费1U\n${t('profile.goal') ? '' : ''}请输入提现数量：`, String(balance));
   if (!amount) return;
   const num = parseFloat(amount);
-  if (isNaN(num) || num <= 0) { showToast('金额无效'); return; }
-  if (num > balance) { showToast('余额不足'); return; }
+  if (isNaN(num) || num <= 0) { showToast(t('toast.invalidAmount')); return; }
+  if (num > balance) { showToast(t('toast.balanceNotEnough')); return; }
 
   try {
     const res = await fetch('/api/withdraw', {
@@ -233,10 +249,10 @@ async function withdraw() {
     });
     const data = await res.json();
     if (data.success) {
-      showToast(data.msg);
+      showToast(data.msg || t('toast.withdrawSuccess'));
       await refreshMember();
     } else {
-      showToast('失败: ' + data.msg);
+      showToast(t('toast.buyFail') + ': ' + data.msg);
     }
   } catch (e) {
     showToast('操作失败: ' + e.message);
@@ -250,8 +266,8 @@ async function renderMyPage() {
     el.innerHTML = `
       <div class="empty-state">
         <div class="emoji">👛</div>
-        <p>请先连接钱包</p>
-        <button class="btn btn-primary" style="margin-top:16px;max-width:200px;" onclick="connectWallet()">连接钱包</button>
+        <p>${t('my.connectFirst')}</p>
+        <button class="btn btn-primary" style="margin-top:16px;max-width:200px;" onclick="connectWallet()">${t('action.connect')}</button>
       </div>`;
     return;
   }
@@ -261,85 +277,86 @@ async function renderMyPage() {
   }
   const m = state.member;
   const avatar = AVATARS[m.avatar_id] || AVATARS[0];
-  const levelText = m.level === 1 ? 'V9会员' : (m.is_member ? '普通会员' : '未入会');
-  const levelClass = m.level === 1 ? 'v9' : '';
+  const levelText = m.level === 1 ? 'V9' : (m.is_member ? t('profile.nickname') ? '普通会员' : '普通会员' : '未入会');
+  const levelBadgeText = m.level === 1 ? 'V9' : (m.is_member ? '普通会员' : '未入会');
 
-  // V9进度
   const directPct = Math.min(100, (m.direct_count / 3) * 100);
   const teamPct = Math.min(100, (m.team_count / 80) * 100);
   const thanksDone = m.thanks_card_sent === 1;
+
+  const referrerDisplay = m.referrer_nickname || (m.referrer ? shortAddr(m.referrer) : t('my.noReferrer'));
 
   el.innerHTML = `
     <div class="profile-header">
       <div class="profile-avatar">${avatar}</div>
       <div class="profile-info">
-        <h2>${m.nickname || '未设置昵称'}</h2>
+        <h2>${m.nickname || t('profile.nicknamePh')}</h2>
         <p>${shortAddr(m.wallet)}</p>
-        <span class="level-badge">${levelText}</span>
+        <span class="level-badge">${levelBadgeText}</span>
       </div>
     </div>
 
     <div class="balance-card">
-      <div class="balance-label">可提现余额</div>
+      <div class="balance-label">${t('my.balance')}</div>
       <div><span class="balance-amount">${m.balance || 0}</span><span class="balance-unit">U</span></div>
       <div style="margin-top:14px;display:flex;gap:10px;">
-        <button class="btn btn-primary" onclick="withdraw()" ${m.balance > 0 ? '' : 'disabled'}>提现</button>
-        <button class="btn btn-secondary" onclick="openProfileModal()" style="max-width:100px;">编辑资料</button>
+        <button class="btn btn-primary" onclick="withdraw()" ${m.balance > 0 ? '' : 'disabled'}>${t('my.withdraw')}</button>
+        <button class="btn btn-secondary" onclick="openProfileModal()" style="max-width:100px;">${t('my.editProfile')}</button>
       </div>
     </div>
 
     <div class="card">
       <div class="info-row">
-        <span class="label">推荐人</span>
-        <span class="value">${m.referrer_nickname || (m.referrer ? shortAddr(m.referrer) : '无（链头）')}</span>
+        <span class="label">${t('my.referrer')}</span>
+        <span class="value">${referrerDisplay}</span>
       </div>
       <div class="info-row">
-        <span class="label">直推人数</span>
-        <span class="value">${m.direct_count} 人</span>
+        <span class="label">${t('my.directCount')}</span>
+        <span class="value">${m.direct_count} ${t('my.people')}</span>
       </div>
       <div class="info-row">
-        <span class="label">团队人数（9层）</span>
-        <span class="value">${m.team_count} 人</span>
+        <span class="label">${t('my.teamCount')}</span>
+        <span class="value">${m.team_count} ${t('my.people')}</span>
       </div>
       <div class="info-row">
-        <span class="label">我的业绩目标</span>
+        <span class="label">${t('my.goal')}</span>
         <span class="value">${m.debt_amount || 0} U</span>
       </div>
     </div>
 
     ${m.is_member ? `
     <div class="card">
-      <h3>V9升级进度</h3>
+      <h3>${t('my.v9Progress')}</h3>
       <div class="v9-progress">
         <div class="progress-item">
-          <div class="progress-header"><span>直推会员 ≥ 3人</span><span>${m.direct_count}/3</span></div>
+          <div class="progress-header"><span>${t('my.directGoal')}</span><span>${m.direct_count}/3</span></div>
           <div class="progress-bar"><div class="progress-fill ${directPct>=100?'done':''}" style="width:${directPct}%"></div></div>
         </div>
         <div class="progress-item">
-          <div class="progress-header"><span>团队总人数 > 80人</span><span>${m.team_count}/80</span></div>
+          <div class="progress-header"><span>${t('my.teamGoal')}</span><span>${m.team_count}/80</span></div>
           <div class="progress-bar"><div class="progress-fill ${teamPct>=100?'done':''}" style="width:${teamPct}%"></div></div>
         </div>
         <div class="progress-item">
-          <div class="progress-header"><span>送出感恩卡（300U）</span><span>${thanksDone ? '已完成' : '未完成'}</span></div>
+          <div class="progress-header"><span>${t('my.thanksGoal')}</span><span>${thanksDone ? t('my.done') : t('my.pending')}</span></div>
           <div class="progress-bar"><div class="progress-fill ${thanksDone?'done':''}" style="width:${thanksDone?100:0}%"></div></div>
         </div>
       </div>
       ${m.level !== 1 && !thanksDone ? `
-        <button class="btn btn-warning" style="margin-top:12px;" onclick="buyThanksCard()">送出感恩卡（300U）</button>
+        <button class="btn btn-warning" style="margin-top:12px;" onclick="buyThanksCard()">${t('my.sendThanks')}</button>
       ` : ''}
-      ${m.level === 1 ? '<p style="text-align:center;color:#11b981;font-weight:600;margin-top:8px;">🎉 您已是V9会员</p>' : ''}
+      ${m.level === 1 ? '<p style="text-align:center;color:#11b981;font-weight:600;margin-top:8px;">🎉 ' + t('my.isV9') + '</p>' : ''}
     </div>
     ` : ''}
 
     <div class="card">
-      <h3>我的团队（九层可见）</h3>
+      <h3>${t('my.myTeam')}</h3>
       <div id="team-tree" class="team-section">
         <p style="color:#999;font-size:13px;text-align:center;padding:10px;">加载中...</p>
       </div>
     </div>
 
     <div class="card">
-      <h3>资金流水</h3>
+      <h3>${t('my.ledger')}</h3>
       <div id="ledger-list" class="ledger-list">
         <p style="color:#999;font-size:13px;text-align:center;padding:10px;">加载中...</p>
       </div>
@@ -357,14 +374,14 @@ async function loadTeamTree() {
     const data = await res.json();
     const el = document.getElementById('team-tree');
     if (!data.success || data.team.length === 0) {
-      el.innerHTML = '<p style="color:#999;font-size:13px;text-align:center;padding:10px;">暂无团队成员</p>';
+      el.innerHTML = '<p style="color:#999;font-size:13px;text-align:center;padding:10px;">' + t('my.noTeam') + '</p>';
       return;
     }
     el.innerHTML = data.team.map(lv => `
       <div class="team-level">
         <div class="team-level-header" onclick="this.nextElementSibling.classList.toggle('open')">
-          <span>第 ${lv.level} 层</span>
-          <span>${lv.members.length} 人</span>
+          <span>${t('my.level').replace('{n}', lv.level)}</span>
+          <span>${t('my.members').replace('{n}', lv.members.length)}</span>
         </div>
         <div class="team-level-body">
           ${lv.members.map(m => `
@@ -389,21 +406,12 @@ async function loadLedger() {
     const data = await res.json();
     const el = document.getElementById('ledger-list');
     if (!data.success || data.ledger.length === 0) {
-      el.innerHTML = '<p style="color:#999;font-size:13px;text-align:center;padding:10px;">暂无流水</p>';
+      el.innerHTML = '<p style="color:#999;font-size:13px;text-align:center;padding:10px;">' + t('my.noLedger') + '</p>';
       return;
     }
-    const typeMap = {
-      income_direct: '直推奖励',
-      income_v9: 'V9奖励',
-      income_normal: '互助分配',
-      income_thanks: '感恩卡收入',
-      withdraw: '提现',
-      fee: '手续费',
-      withdraw_refund: '提现退回'
-    };
     el.innerHTML = data.ledger.map(l => `
       <div class="ledger-item">
-        <span class="ledger-type">${typeMap[l.type] || l.type}</span>
+        <span class="ledger-type">${t('ledger.' + l.type) || l.type}</span>
         <span class="ledger-amount ${l.amount >= 0 ? 'positive' : 'negative'}">${l.amount >= 0 ? '+' : ''}${l.amount}</span>
       </div>
     `).join('');
@@ -419,8 +427,8 @@ async function renderSharePage() {
     el.innerHTML = `
       <div class="empty-state">
         <div class="emoji">🔗</div>
-        <p>请先连接钱包</p>
-        <button class="btn btn-primary" style="margin-top:16px;max-width:200px;" onclick="connectWallet()">连接钱包</button>
+        <p>${t('my.connectFirst')}</p>
+        <button class="btn btn-primary" style="margin-top:16px;max-width:200px;" onclick="connectWallet()">${t('action.connect')}</button>
       </div>`;
     return;
   }
@@ -428,8 +436,8 @@ async function renderSharePage() {
     el.innerHTML = `
       <div class="empty-state">
         <div class="emoji">🎫</div>
-        <p>购买互助卡成为会员后即可生成分享链接</p>
-        <button class="btn btn-primary" style="margin-top:16px;max-width:240px;" onclick="buyCard()">购买互助卡</button>
+        <p>${t('share.needMember')}</p>
+        <button class="btn btn-primary" style="margin-top:16px;max-width:240px;" onclick="buyCard()">${t('share.buyCard')}</button>
       </div>`;
     return;
   }
@@ -441,20 +449,19 @@ async function renderSharePage() {
     <div class="share-card">
       <div class="share-avatar">${avatar}</div>
       <div class="share-name">${m.nickname || '人人帮会员'}</div>
-      ${m.debt_amount > 0 ? `<div class="share-debt">我的业绩目标 ${m.debt_amount} U</div>` : ''}
+      ${m.debt_amount > 0 ? `<div class="share-debt">${t('share.goalLabel').replace('{n}', m.debt_amount)}</div>` : ''}
       <div class="qrcode-box" id="qrcode"></div>
       <div class="share-link" id="share-link">${shareUrl}</div>
-      <button class="btn btn-primary" onclick="copyLink()">复制分享链接</button>
+      <button class="btn btn-primary" onclick="copyLink()">${t('share.copyLink')}</button>
     </div>
     <div class="card">
-      <h3>分享说明</h3>
+      <h3>${t('profile.avatar')}</h3>
       <p style="font-size:13px;color:#666;line-height:1.7;">
-        好友通过你的链接在TP钱包中打开并连接钱包，即可绑定推荐关系。好友购买互助卡后，你将获得直推奖励20U，并有机会获得V9奖励40U。
+        ${t('share.desc')}
       </p>
     </div>
   `;
 
-  // 生成二维码（用在线API，兼容性最好）
   const box = document.getElementById('qrcode');
   if (box) {
     const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=1&data=' + encodeURIComponent(shareUrl);
@@ -465,16 +472,15 @@ async function renderSharePage() {
 function copyLink() {
   const link = document.getElementById('share-link').textContent;
   navigator.clipboard.writeText(link).then(() => {
-    showToast('链接已复制');
+    showToast(t('share.copied'));
   }).catch(() => {
-    // 兼容方案
     const ta = document.createElement('textarea');
     ta.value = link;
     document.body.appendChild(ta);
     ta.select();
     document.execCommand('copy');
     document.body.removeChild(ta);
-    showToast('链接已复制');
+    showToast(t('share.copied'));
   });
 }
 
@@ -524,11 +530,11 @@ async function saveProfile() {
     const data = await res.json();
     if (data.success) {
       state.member = data.member;
-      showToast('资料已保存');
+      showToast(t('profile.saved'));
       closeProfileModal({ target: { id: 'profile-modal' } });
       renderAll();
     } else {
-      showToast('保存失败');
+      showToast(t('toast.buyFail'));
     }
   } catch (e) {
     showToast('保存失败: ' + e.message);
@@ -542,11 +548,11 @@ function shortAddr(addr) {
 }
 
 function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  clearTimeout(t._timer);
-  t._timer = setTimeout(() => t.classList.remove('show'), 2500);
+  const t_el = document.getElementById('toast');
+  t_el.textContent = msg;
+  t_el.classList.add('show');
+  clearTimeout(t_el._timer);
+  t_el._timer = setTimeout(() => t_el.classList.remove('show'), 2500);
 }
 
 function renderAll() {
