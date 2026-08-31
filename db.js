@@ -16,8 +16,26 @@ async function initMySQL() {
   const mysqlUrl = process.env.MYSQL_URL || process.env.DATABASE_URL;
   if (!mysqlUrl) return false;
 
+  console.log('[数据库] 尝试连接MySQL，URL:', mysqlUrl.substring(0, 30) + '...');
+
   try {
-    pool = mysql.createPool(mysqlUrl + '?waitForConnections=true&connectionLimit=10&queueLimit=0');
+    // 解析URL，构建连接配置
+    const url = new URL(mysqlUrl);
+    const config = {
+      host: url.hostname,
+      port: parseInt(url.port) || 3306,
+      user: decodeURIComponent(url.username),
+      password: decodeURIComponent(url.password),
+      database: decodeURIComponent(url.pathname.replace('/', '')),
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      connectTimeout: 10000,
+      acquireTimeout: 10000
+    };
+    console.log('[数据库] MySQL配置:', { host: config.host, port: config.port, user: config.user, database: config.database });
+
+    pool = mysql.createPool(config);
     // 测试连接
     const conn = await pool.getConnection();
     await conn.ping();
@@ -28,6 +46,7 @@ async function initMySQL() {
     return true;
   } catch (e) {
     console.error('[数据库] MySQL 连接失败，回退到SQLite:', e.message);
+    console.error('[数据库] 错误堆栈:', e.stack);
     useMySQL = false;
     pool = null;
     return false;
