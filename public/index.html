@@ -10,25 +10,19 @@
   <div id="app">
     <!-- 顶部导航 -->
     <header class="navbar">
-      <div class="nav-brand" onclick="navigate('home')">人人帮</div>
       <nav class="nav-links">
         <a onclick="navigate('home')" data-nav="home" data-i18n="nav.home">首页</a>
         <a onclick="navigate('my')" data-nav="my" data-i18n="nav.my">我的</a>
         <a onclick="navigate('share')" data-nav="share" data-i18n="nav.share">分享</a>
       </nav>
-    </header>
-
-    <!-- 语言选择 -->
-    <div class="lang-bar">
-      <span data-i18n="language">语言</span>
-      <select id="lang-select" onchange="setLang(this.value)">
+      <select id="lang-select" class="nav-lang" onchange="setLang(this.value)">
         <option value="en">English</option>
         <option value="ko">한국어</option>
         <option value="ja">日本語</option>
         <option value="tw">繁體中文</option>
         <option value="cn">简体中文</option>
       </select>
-    </div>
+    </header>
 
     <!-- 首页 -->
     <section id="page-home" class="page active">
@@ -121,7 +115,7 @@
 
     <!-- 版本号 -->
     <div class="version-bar">
-      <span id="version-text">v2.1.1</span>
+      <span id="version-text">v2.1.2</span>
     </div>
 
     <!-- Toast 提示 -->
