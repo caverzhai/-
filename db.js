@@ -70,7 +70,7 @@ async function initMySQLTables() {
         direct_count INT DEFAULT 0,
         team_count INT DEFAULT 0,
         thanks_card_sent TINYINT DEFAULT 0,
-        created_at INT DEFAULT UNIX_TIMESTAMP(),
+        created_at INT DEFAULT 0,
         become_member_at INT
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
@@ -78,7 +78,7 @@ async function initMySQLTables() {
       CREATE TABLE IF NOT EXISTS balances (
         wallet VARCHAR(64) PRIMARY KEY,
         available FLOAT DEFAULT 0,
-        updated_at INT DEFAULT UNIX_TIMESTAMP()
+        updated_at INT DEFAULT 0
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
     await conn.query(`
@@ -89,7 +89,7 @@ async function initMySQLTables() {
         amount FLOAT NOT NULL,
         balance_after FLOAT NOT NULL,
         ref_id INT,
-        created_at INT DEFAULT UNIX_TIMESTAMP()
+        created_at INT DEFAULT 0
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
     await conn.query(`
@@ -100,7 +100,7 @@ async function initMySQLTables() {
         amount FLOAT DEFAULT 180,
         distribution TEXT,
         status VARCHAR(20) DEFAULT 'pending',
-        created_at INT DEFAULT UNIX_TIMESTAMP()
+        created_at INT DEFAULT 0
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
     await conn.query(`
@@ -111,7 +111,7 @@ async function initMySQLTables() {
         tx_hash VARCHAR(100) UNIQUE,
         amount FLOAT DEFAULT 300,
         status VARCHAR(20) DEFAULT 'pending',
-        created_at INT DEFAULT UNIX_TIMESTAMP()
+        created_at INT DEFAULT 0
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
     await conn.query(`
@@ -122,13 +122,14 @@ async function initMySQLTables() {
         actual_amount FLOAT NOT NULL,
         tx_hash VARCHAR(100),
         status VARCHAR(20) DEFAULT 'pending',
-        created_at INT DEFAULT UNIX_TIMESTAMP(),
+        created_at INT DEFAULT 0,
         processed_at INT
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
-    await conn.query(`CREATE INDEX IF NOT EXISTS idx_members_referrer ON members(referrer)`);
-    await conn.query(`CREATE INDEX IF NOT EXISTS idx_ledger_wallet ON ledger(wallet)`);
-    await conn.query(`CREATE INDEX IF NOT EXISTS idx_withdrawals_status ON withdrawals(status)`);
+    // MySQL不支持CREATE INDEX IF NOT EXISTS，用try/catch忽略已存在的错误
+    try { await conn.query('CREATE INDEX idx_members_referrer ON members(referrer)'); } catch(e) {}
+    try { await conn.query('CREATE INDEX idx_ledger_wallet ON ledger(wallet)'); } catch(e) {}
+    try { await conn.query('CREATE INDEX idx_withdrawals_status ON withdrawals(status)'); } catch(e) {}
     console.log('[数据库] MySQL 表初始化完成');
   } finally {
     conn.release();
